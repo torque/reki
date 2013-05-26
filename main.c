@@ -7,8 +7,30 @@
 #include <arpa/inet.h>
 #include <ev.h>
 #include <strings.h>
+#include "http-parser/http_parser.h"
 
 #define PORT 8081
+
+struct http_parser_data {
+	struct ev_loop *loop;
+	ev_io *watcher;
+};
+
+static int parser_url_callback(http_parser *parser, const char *at, size_t length) {
+	printf("URL requested was: %.*s\n", length, at);
+
+	struct http_parser_data *http_parser_data = (struct http_parser_data*)parser->data;
+
+	const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\n\r\nHi";
+	send(http_parser_data->watcher->fd, reply, strlen(reply), 0);
+	ev_io_stop(http_parser_data->loop, http_parser_data->watcher);
+	free(http_parser_data->watcher);
+	close(http_parser_data->watcher->fd);
+	printf("Connection closed\n");
+	
+	return 0;
+}
+
 
 static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	char stuff[100000];
@@ -23,12 +45,26 @@ static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	if(read_length == 0) {
 		ev_io_stop(loop, watcher);
 		free(watcher);
+		close(watcher->fd);
 		printf("Connection closed\n");
 		return;
 	}
 
 	printf("Read %d bytes\n", read_length);
 	printf("%.*s", read_length, stuff);
+
+	http_parser_settings parser_settings;
+	parser_settings.on_url = parser_url_callback;
+	http_parser *parser = (http_parser*)malloc(sizeof(http_parser));
+
+	struct http_parser_data *http_parser_data = malloc(sizeof(struct http_parser_data));
+	http_parser_data->loop = loop;
+	http_parser_data->watcher = watcher;
+	parser->data = (void*)http_parser_data;
+	
+	http_parser_init(parser, HTTP_REQUEST);
+	http_parser_execute(parser, &parser_settings, stuff, read_length);
+
 }
 
 static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
@@ -95,6 +131,7 @@ int main()
 	ev_io_start(loop, accept_watcher);
 	ev_run(loop, 0);
 
+	printf("Closing connection\n");
 	free(accept_watcher);
 	close(sock);
 
