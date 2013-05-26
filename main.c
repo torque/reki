@@ -102,6 +102,13 @@ int main()
 		return 1;
 	}
 
+	int socketoption = 1;
+	retval = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &socketoption, sizeof(socketoption));
+	if(retval == -1) {
+		perror("Could not set socket options");
+		return 1;
+	}
+
 	struct sockaddr_in addr;
 	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
