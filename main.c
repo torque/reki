@@ -26,6 +26,7 @@ struct client_socket_data {
 	http_parser *parser;
 	http_parser_settings parser_settings;
 	dynamic_string *url;
+	unsigned char shouldfree;
 };
 
 dynamic_string *dynamic_string_init() {
@@ -54,10 +55,12 @@ void dynamic_string_append(dynamic_string *str, char *append, size_t size) {
 static int parser_message_complete_callback(http_parser *parser) {
 	struct client_socket_data *data = (struct client_socket_data*)parser->data;
 
-	printf("URL requested was: %.*s\n", data->url->size, data->url->str);
+	//printf("URL requested was: %.*s\n", data->url->size, data->url->str);
 
 	const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi";
 	send(data->sock, reply, strlen(reply), 0);
+
+	data->shouldfree = 1;
 
 
 	return 0;
@@ -82,21 +85,23 @@ static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	}
 	
 	if(read_length == 0) {
+		data->shouldfree = 1;
+		//printf("Connection closed by client\n");
+	}
+	else {
+		//printf("Read %d bytes\n", read_length);
+		//printf("%.*s", read_length, buffer);
+		http_parser_execute(data->parser, &(data->parser_settings), buffer, read_length);
+	}
+
+	if(data->shouldfree == 1) {
 		ev_io_stop(data->loop, data->watcher);
 		free(data->watcher);
 		free(data->parser);
 		dynamic_string_free(data->url);
 		close(data->sock);
 		free(data);
-
-		printf("Connection closed by client\n");
-		return;
 	}
-
-	printf("Read %d bytes\n", read_length);
-	//printf("%.*s", read_length, buffer);
-
-	http_parser_execute(data->parser, &(data->parser_settings), buffer, read_length);
 }
 
 static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
@@ -110,13 +115,14 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	
 	char address_str[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &(client_addr.sin_addr), address_str, INET_ADDRSTRLEN);
-	printf("Connection accepted from %s\n", address_str);
+	//printf("Connection accepted from %s\n", address_str);
 	
 	struct client_socket_data *data = malloc(sizeof(struct client_socket_data));
 	data->loop = loop;
 	data->watcher = (ev_io*)malloc(sizeof(ev_io));
 	data->sock = client_sock;
 	data->url = dynamic_string_init();
+	data->shouldfree = 0;
 
 	bzero((void *)&data->parser_settings, sizeof(data->parser_settings));
 	data->parser_settings.on_url = parser_url_callback;
