@@ -118,6 +118,7 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	data->sock = client_sock;
 	data->url = dynamic_string_init();
 
+	bzero((void *)&data->parser_settings, sizeof(data->parser_settings));
 	data->parser_settings.on_url = parser_url_callback;
 	data->parser_settings.on_message_complete = parser_message_complete_callback;
 	data->parser = (http_parser*)malloc(sizeof(http_parser));
