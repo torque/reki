@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <ev.h>
 #include <strings.h>
+#include <string.h>
 #include "http-parser/http_parser.h"
 
 #define PORT 8081
@@ -28,6 +29,8 @@ struct client_socket_data {
 	dynamic_string *url;
 	unsigned char shouldfree;
 };
+
+static const char *announce_base_url = "/announce?";
 
 dynamic_string *dynamic_string_init() {
 	dynamic_string *str = (dynamic_string *)malloc(sizeof(dynamic_string));
@@ -52,17 +55,60 @@ void dynamic_string_append(dynamic_string *str, char *append, size_t size) {
 	str->size += size;
 }
 
+void announce(struct client_socket_data* data) {
+	int beginning_of_token = strlen(announce_base_url), middle_of_token = -1, error = 0, pos;
+	for(pos = strlen(announce_base_url); pos <= data->url->size; pos++) {
+		if(pos == data->url->size || data->url->str[pos] == '&') { // end of string or new param
+			int end_of_token = pos;
+
+			if(beginning_of_token == end_of_token) {
+				printf("No param\n");
+				error = 1;
+			}
+			if(!error & middle_of_token == -1) {
+				printf("Missing =\n");
+				error = 1;
+			}
+
+			if(!error) { // All good
+				printf("field: %.*s", middle_of_token - beginning_of_token, data->url->str + beginning_of_token);
+				printf(" value: %.*s\n", end_of_token - middle_of_token - 1, data->url->str + middle_of_token + 1);
+			}
+
+			// Reset
+			beginning_of_token = pos + 1;
+			middle_of_token = -1;
+			error = 0;
+		}
+		else if(data->url->str[pos] == '=') {
+			if(middle_of_token != -1) {
+				printf("Double =\n");
+				error = 1;
+			}
+			middle_of_token = pos;
+		}
+	}
+	
+
+	
+}
+
 static int parser_message_complete_callback(http_parser *parser) {
 	struct client_socket_data *data = (struct client_socket_data*)parser->data;
 
-	//printf("URL requested was: %.*s\n", data->url->size, data->url->str);
-
-	const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi";
-	send(data->sock, reply, strlen(reply), 0);
+	printf("URL requested was: %.*s\n", data->url->size, data->url->str);
+	
+	if(data->url->size >= strlen(announce_base_url)) {
+		if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
+			announce(data);
+		}
+	}
+	else {
+		const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi";
+		send(data->sock, reply, strlen(reply), 0);
+	}
 
 	data->shouldfree = 1;
-
-
 	return 0;
 }
 
