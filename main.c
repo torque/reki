@@ -8,6 +8,8 @@
 #include <ev.h>
 #include <strings.h>
 #include <string.h>
+#include <inttypes.h>
+#include <limits.h>
 #include "http-parser/http_parser.h"
 
 #define PORT 8081
@@ -55,7 +57,46 @@ void dynamic_string_append(dynamic_string *str, char *append, size_t size) {
 	str->size += size;
 }
 
+struct tracker_announce_data {
+	char peer_id[20];
+	char info_hash[20];
+	int port;
+	long long left;
+	int compact;
+	int event;
+};
+
+long long read_int(char *str, int str_size) {
+	char temp[100];
+	if(str_size + 1 > 100) {
+		printf("Value for left way too long, skipping\n");
+		return -1;
+	}
+	memcpy(temp, str, str_size);
+	temp[str_size] = '\0';
+
+	errno = 0;
+	char *endptr;
+	long long num = strtoll(temp, &endptr, 10);
+	if(errno == ERANGE) {
+		printf("Left value overflowed\n");
+		return -1;
+	}
+	else if(errno != 0 || *endptr != '\0') {
+		printf("Error in string-to-int conversion\n");
+		return -1;
+	}
+
+	return num;
+}
+
 void announce(struct client_socket_data* data) {
+	struct tracker_announce_data announce_data;
+	bzero(&announce_data, sizeof(announce_data));
+	announce_data.port = -1;
+	announce_data.left = -1;
+	announce_data.event = -1;
+
 	int beginning_of_token = strlen(announce_base_url), middle_of_token = -1, error = 0, pos;
 	for(pos = strlen(announce_base_url); pos <= data->url->size; pos++) {
 		if(pos == data->url->size || data->url->str[pos] == '&') { // end of string or new param
@@ -81,6 +122,21 @@ void announce(struct client_socket_data* data) {
 				int value_size = end_of_token - middle_of_token - 1; 
 
 				printf("%.*s = %.*s\n", field_size, field, value_size, value);
+
+
+				const static char *left_str = "left";
+				if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
+					announce_data.left = read_int(value, value_size);
+				}
+
+				const static char *port_str = "port";
+				if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
+					announce_data.port = read_int(value, value_size);
+					if(announce_data.port < 0 || announce_data.port > 65335) {
+						printf("Invalid port\n");
+						announce_data.port = -1;
+					}
+				}
 			}
 
 			// Reset
