@@ -69,10 +69,18 @@ void announce(struct client_socket_data* data) {
 				printf("Missing =\n");
 				error = 1;
 			}
+			if(!error & (beginning_of_token == middle_of_token || middle_of_token == end_of_token - 1)) {
+				printf("Missing either field or value\n");
+				error = 1;
+			}
 
 			if(!error) { // All good
-				printf("field: %.*s", middle_of_token - beginning_of_token, data->url->str + beginning_of_token);
-				printf(" value: %.*s\n", end_of_token - middle_of_token - 1, data->url->str + middle_of_token + 1);
+				char *field = data->url->str + beginning_of_token;
+				int field_size = middle_of_token - beginning_of_token;
+				char *value = data->url->str + middle_of_token + 1;
+				int value_size = end_of_token - middle_of_token - 1; 
+
+				printf("%.*s = %.*s\n", field_size, field, value_size, value);
 			}
 
 			// Reset
