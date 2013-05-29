@@ -97,12 +97,16 @@ long long read_int(char *str, int str_size) {
 
 void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_length) {
 	int pos, i = 0;
-	for(pos = 0; pos < url_info_hash_length; pos++) {
+	for(pos = 0; (pos < url_info_hash_length && i < 40); pos++) {
 		if (url_info_hash[pos] == '%') {
-			memcpy(info_hash+i, url_info_hash+pos+1, 2);
-			pos += 2;
+			if (pos + 2 >= url_info_hash_length ) {
+				return; // malformed info_hash, do something about it.
+			} else {
+				memcpy(info_hash + i, url_info_hash + pos + 1, 2);
+				pos += 2;
+			}
 		} else {
-			sprintf(info_hash+i, "%02x", (int)url_info_hash[pos]);
+			sprintf(info_hash + i, "%02x", (int)url_info_hash[pos]);
 		}
 		i += 2;
 	}
