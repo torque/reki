@@ -10,11 +10,15 @@
 #include <string.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <hiredis/hiredis.h>
+#include <hiredis/async.h>
+#include <hiredis/adapters/libev.h>
 #include "http-parser/http_parser.h"
 
 #define PORT 8081
 #define READSIZE 1024
 #define DYNAMICSTRINGSIZE 1024
+#define REDIS_PORT 6379
 
 typedef struct {
 	char *str;
@@ -33,6 +37,7 @@ struct client_socket_data {
 };
 
 static const char *announce_base_url = "/announce?";
+redisAsyncContext *redis; // abuse scope for ease-of-use
 
 dynamic_string *dynamic_string_init() {
 	dynamic_string *str = (dynamic_string *)malloc(sizeof(dynamic_string));
@@ -102,6 +107,32 @@ void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_len
 		i += 2;
 	}
 }
+
+void check_database(redisAsyncContext *redis, void *r, void *info_hash) {
+	// if there are peers, then the torrent exists.
+	// if there are no peers, check the database.
+	redisReply *reply = r;
+	if (reply == NULL) { return; }
+	printf("Number of peers: %lld", reply->integer);
+	if (!reply->integer) {
+		// check database for torrent existence
+	}
+}
+
+void check_peers(redisAsyncContext *redis, void *r, void *info_hash) {	// callback to check if there are any peers
+	// if there are seeds, then the torrent exists.
+	// if there are no seeds, check for number of peers.
+	redisReply *reply = r;
+	if (reply == NULL) { 
+		// an error has occurred and the context needs to be destroyed as well
+		return; 
+	}
+	printf("Number of seeds: %lld\n", reply->integer);
+	if(!reply->integer) {
+		redisAsyncCommand(redis, check_database, info_hash, "ZCARD %s:peers", (char*)info_hash);
+	}
+}
+
 void announce(struct client_socket_data* data) {
 	struct tracker_announce_data announce_data;
 	bzero(&announce_data, sizeof(announce_data));
@@ -170,9 +201,8 @@ void announce(struct client_socket_data* data) {
 			middle_of_token = pos;
 		}
 	}
-	
-
-	
+	// check if torrent exists
+	redisAsyncCommand(redis, check_peers, announce_data.info_hash, "ZCARD %s:seeds", announce_data.info_hash);
 }
 
 static int parser_message_complete_callback(http_parser *parser) {
@@ -270,6 +300,22 @@ void sigint_callback(EV_P_ ev_signal *w, int revents)
 		ev_unloop(EV_A_ EVUNLOOP_ALL);
 }
 
+void redis_connect_callback(const redisAsyncContext *redis, int status) {
+	if (status != REDIS_OK) {
+		printf("Error: %s\n", redis->errstr);
+		return;
+	}
+	printf("Connected to redis-server on port %d.\n",REDIS_PORT);
+}
+
+void redis_disconnect_callback(const redisAsyncContext *redis, int status) {
+	if (status != REDIS_OK) {
+		printf("Error: %s\n", redis->errstr);
+		return;
+	}
+	printf("Disconnected from redis_server.\n");
+}
+
 int main()
 {
 	int retval;
@@ -305,6 +351,15 @@ int main()
 		perror("Could not listen");
 		return 1;
 	}
+	redis = redisAsyncConnect("127.0.0.1", REDIS_PORT);
+	if (redis->err) {
+		printf("Failed to connect to redis-server: %s\n", redis->errstr);
+		redisAsyncFree(redis);
+		return 1;
+	}
+	redisLibevAttach(EV_DEFAULT_ redis);
+	redisAsyncSetConnectCallback(redis,redis_connect_callback);
+	redisAsyncSetDisconnectCallback(redis,redis_disconnect_callback);
 
 	struct ev_loop *loop = ev_default_loop(0);
 	ev_io *accept_watcher = (ev_io*)malloc(sizeof(ev_io));
