@@ -149,7 +149,7 @@ void announce(struct client_socket_data* data) {
 				printf("No param\n");
 				error = 1;
 			}
-			if(!error & middle_of_token == -1) {
+			if(!error & (middle_of_token == -1)) {
 				printf("Missing =\n");
 				error = 1;
 			}
@@ -208,7 +208,7 @@ void announce(struct client_socket_data* data) {
 static int parser_message_complete_callback(http_parser *parser) {
 	struct client_socket_data *data = (struct client_socket_data*)parser->data;
 
-	printf("URL requested was: %.*s\n", data->url->size, data->url->str);
+	printf("URL requested was: %.*s\n", (int)data->url->size, data->url->str);
 	
 	if(data->url->size >= strlen(announce_base_url)) {
 		if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
@@ -296,7 +296,7 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 
 void sigint_callback(EV_P_ ev_signal *w, int revents)
 {
-		printf("SIGINT catched\n");
+		printf("SIGINT caught.\n");
 		ev_unloop(EV_A_ EVUNLOOP_ALL);
 }
 
