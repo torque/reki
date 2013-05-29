@@ -59,7 +59,7 @@ void dynamic_string_append(dynamic_string *str, char *append, size_t size) {
 
 struct tracker_announce_data {
 	char peer_id[20];
-	char info_hash[20];
+	char info_hash[40];
 	int port;
 	long long left;
 	int compact;
@@ -90,6 +90,18 @@ long long read_int(char *str, int str_size) {
 	return num;
 }
 
+void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_length) {
+	int pos, i = 0;
+	for(pos = 0; pos < url_info_hash_length; pos++) {
+		if (url_info_hash[pos] == '%') {
+			memcpy(info_hash+i, url_info_hash+pos+1, 2);
+			pos += 2;
+		} else {
+			sprintf(info_hash+i, "%02x", (int)url_info_hash[pos]);
+		}
+		i += 2;
+	}
+}
 void announce(struct client_socket_data* data) {
 	struct tracker_announce_data announce_data;
 	bzero(&announce_data, sizeof(announce_data));
@@ -127,6 +139,12 @@ void announce(struct client_socket_data* data) {
 				const static char *left_str = "left";
 				if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
 					announce_data.left = read_int(value, value_size);
+				}
+
+				const static char *info_hash_str = "info_hash";
+				if (strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
+					parse_info_hash(announce_data.info_hash, value, value_size);
+					printf("Info hash: %s\n",announce_data.info_hash);
 				}
 
 				const static char *port_str = "port";
