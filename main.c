@@ -113,27 +113,14 @@ void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_len
 }
 
 void check_database(redisAsyncContext *redis, void *r, void *info_hash) {
-	// if there are peers, then the torrent exists.
-	// if there are no peers, check the database.
 	redisReply *reply = r;
 	if (reply == NULL) { return; }
-	printf("Number of peers: %lld", reply->integer);
-	if (!reply->integer) {
+	long long number_of_seeds = reply->element[0]->integer,
+	          number_of_peers = reply->element[1]->integer;
+	if (!(number_of_seeds + number_of_peers)) {
 		// check database for torrent existence
-	}
-}
-
-void check_peers(redisAsyncContext *redis, void *r, void *info_hash) {	// callback to check if there are any peers
-	// if there are seeds, then the torrent exists.
-	// if there are no seeds, check for number of peers.
-	redisReply *reply = r;
-	if (reply == NULL) { 
-		// an error has occurred and the context needs to be destroyed as well
-		return; 
-	}
-	printf("Number of seeds: %lld\n", reply->integer);
-	if(!reply->integer) {
-		redisAsyncCommand(redis, check_database, info_hash, "ZCARD %s:peers", (char*)info_hash);
+	} else {
+		// torrent exists, proceed with response.
 	}
 }
 
@@ -205,8 +192,10 @@ void announce(struct client_socket_data* data) {
 			middle_of_token = pos;
 		}
 	}
-	// check if torrent exists
-	redisAsyncCommand(redis, check_peers, announce_data.info_hash, "ZCARD %s:seeds", announce_data.info_hash);
+	redisAsyncCommand(redis, NULL, NULL, "MULTI");
+	redisAsyncCommand(redis, NULL, NULL, "ZCARD %s:seeds", announce_data.info_hash);
+	redisAsyncCommand(redis, NULL, NULL, "ZCARD %s:peers", announce_data.info_hash);
+	redisAsyncCommand(redis, check_database, announce_data.info_hash, "EXEC");
 }
 
 static int parser_message_complete_callback(http_parser *parser) {
