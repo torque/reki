@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <setjmp.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -95,12 +96,22 @@ long long read_int(char *str, int str_size) {
 	return num;
 }
 
-void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_length) {
-	int pos, i = 0;
-	for(pos = 0; (pos < url_info_hash_length && i < 40); pos++) {
+int parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_length) {
+	jmp_buf env;
+	int pos, i = 0, val;
+	val = setjmp(env);
+	if (val) {
+		return -1;
+	}
+	for(pos = 0; pos < url_info_hash_length; pos++) {
+		if (i >= 40) {
+			// The hash is too long and therefore invalid
+			longjmp(env,1);
+		}
 		if (url_info_hash[pos] == '%') {
-			if (pos + 2 >= url_info_hash_length ) {
-				return; // malformed info_hash, do something about it.
+			if (pos + 2 >= url_info_hash_length) {
+				// The info hash is malformed and cannot be parsed properly
+				longjmp(env,1);
 			} else {
 				memcpy(info_hash + i, url_info_hash + pos + 1, 2);
 				pos += 2;
@@ -110,6 +121,11 @@ void parse_info_hash(char *info_hash, char *url_info_hash, int url_info_hash_len
 		}
 		i += 2;
 	}
+	if (i < 40) {
+		// The hash is too short and therefore invalid
+		longjmp(env,1);
+	}
+	return 0;
 }
 
 void check_database(redisAsyncContext *redis, void *r, void *info_hash) {
@@ -124,7 +140,7 @@ void check_database(redisAsyncContext *redis, void *r, void *info_hash) {
 	}
 }
 
-void announce(struct client_socket_data* data) {
+void parse_announce_request(struct client_socket_data* data) {
 	struct tracker_announce_data announce_data;
 	bzero(&announce_data, sizeof(announce_data));
 	announce_data.port = -1;
@@ -165,8 +181,13 @@ void announce(struct client_socket_data* data) {
 
 				const static char *info_hash_str = "info_hash";
 				if (strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
-					parse_info_hash(announce_data.info_hash, value, value_size);
-					printf("Info hash: %s\n",announce_data.info_hash);
+					int parsing_succeeded = parse_info_hash(announce_data.info_hash, value, value_size);
+					if (parsing_succeeded == 0){
+						printf("Info hash: %s\n",announce_data.info_hash);
+					} else {
+						// return bencoded error
+						printf("Invalid info_hash given.\n");
+					}
 				}
 
 				const static char *port_str = "port";
@@ -205,7 +226,7 @@ static int parser_message_complete_callback(http_parser *parser) {
 	
 	if(data->url->size >= strlen(announce_base_url)) {
 		if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
-			announce(data);
+			parse_announce_request(data);
 		}
 	}
 	else {
