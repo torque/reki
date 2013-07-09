@@ -3,10 +3,10 @@ CFLAGS = -ggdb
 
 all: main
 
-main: main.o http-parser/http_parser.o
+main: reki.o http-parser/http_parser.o dynamic_string.o
 	$(CC) -o $@ $^ -lev -lhiredis $(CFLAGS)
 
-clean: 
+clean:
 	$(RM) *.o
 	$(RM) *~
 	$(RM) *#
