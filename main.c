@@ -142,7 +142,7 @@ void check_database(redisAsyncContext *redis, void *r, void *info_hash) {
 
 void parse_announce_request(struct client_socket_data* data) {
 	struct tracker_announce_data announce_data;
-	bzero(&announce_data, sizeof(announce_data));
+	memset(&announce_data, 0, sizeof(tracker_announce_data));
 	announce_data.port = -1;
 	announce_data.left = -1;
 	announce_data.event = -1;
@@ -296,7 +296,7 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	data->url = dynamic_string_init();
 	data->shouldfree = 0;
 
-	bzero((void *)&data->parser_settings, sizeof(data->parser_settings));
+	memset(&data->parser_settings, 0, sizeof(data->parser_settings));
 	data->parser_settings.on_url = parser_url_callback;
 	data->parser_settings.on_message_complete = parser_message_complete_callback;
 	data->parser = (http_parser*)malloc(sizeof(http_parser));
