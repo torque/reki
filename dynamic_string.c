@@ -26,3 +26,8 @@ void dynamic_string_append(dynamic_string *str, const char *append, size_t size)
 	memcpy(((void*)str->str) + str->size, (void *)append, size);
 	str->size += size;
 }
+
+void dynamic_string_join(dynamic_string *joinee, dynamic_string *joiner) {
+	dynamic_string_append(joinee, joiner->str, joiner->size);
+	dynamic_string_free(joiner);
+}
