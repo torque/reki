@@ -251,7 +251,10 @@ void send_reply(redisAsyncContext *redis, void *r, void *a) {
 	sprintf(http_response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %lu\r\n\r\n", tracker_reply->size);
 	memcpy(http_response + 82 + reply_size_length, tracker_reply->str, tracker_reply->size);
 
-	send(data->sock, http_response, http_response_length, 0);
+	int retval = send(data->sock, http_response, http_response_length, 0);
+	if(retval == -1) {
+		printf("%s\n", strerror(errno));
+	}
 	data->shouldfree = 1;
 
 	error:
@@ -301,10 +304,7 @@ void announce(tracker_announce_data *announce_data) {
 	// if (announce_data->event == 1 ) {
 	// 	// increment completed count
 	// }
-
-	tracker_announce_data *ad = malloc(sizeof(tracker_announce_data));
-	memcpy(ad, announce_data, sizeof(tracker_announce_data));
-	redisAsyncCommand(redis, send_reply, ad, "EXEC");
+	redisAsyncCommand(redis, send_reply, announce_data, "EXEC");
 }
 
 /* This function doesn't even need to exist if we're a pure public tracker */
@@ -326,13 +326,13 @@ void announce(tracker_announce_data *announce_data) {
 // }
 
 int parse_announce_request(client_socket_data *data) {
-	tracker_announce_data announce_data;
-	memset(&announce_data, 0, sizeof(tracker_announce_data));
-	announce_data.socket_data = data;
-	announce_data.port = -1;
-	announce_data.left = -1;
-	announce_data.event = -1;
-	announce_data.ip = -1;
+	tracker_announce_data *announce_data = malloc(sizeof(tracker_announce_data));
+	memset(announce_data, 0, sizeof(tracker_announce_data));
+	announce_data->socket_data = data;
+	announce_data->port = -1;
+	announce_data->left = -1;
+	announce_data->event = -1;
+	announce_data->ip = -1;
 
 	int beginning_of_token = strlen(announce_base_url), middle_of_token = -1, error = 0, pos;
 	for(pos = strlen(announce_base_url); pos <= data->url->size; pos++) {
@@ -369,49 +369,49 @@ int parse_announce_request(client_socket_data *data) {
 				const static char *event_str = "event";
 
 				if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
-					announce_data.left = read_int(value, value_size, 10);
+					announce_data->left = read_int(value, value_size, 10);
 
 				} else if(strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
-					int parsing_succeeded = parse_info_hash(announce_data.info_hash, 40, value, value_size);
+					int parsing_succeeded = parse_info_hash(announce_data->info_hash, 40, value, value_size);
 					if (parsing_succeeded == 0) {
-						debug("Info hash: %.*s", 40, announce_data.info_hash);
+						debug("Info hash: %.*s", 40, announce_data->info_hash);
 					} else {
-						simple_error(&announce_data, "Invalid info hash.");
+						simple_error(announce_data, "Invalid info hash.");
 						log_info("Invalid hash: %s", value);
 						return 0;
 					}
 
 				} else if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
 					long long temp = read_int(value, value_size, 10);
-					announce_data.port = (int)temp;
-					if(announce_data.port < 0 || announce_data.port > 65335) {
-						simple_error(&announce_data, "Invalid port.");
-						log_info("Invalid port: %.*s -> %d", value_size, value, announce_data.port);
+					announce_data->port = (int)temp;
+					if(announce_data->port < 0 || announce_data->port > 65335) {
+						simple_error(announce_data, "Invalid port.");
+						log_info("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
 					}
 
 				} else if(strlen(ip_str) == field_size && strncmp(ip_str, field, strlen(ip_str)) == 0) {
-					inet_pton(AF_INET, value, &(announce_data.ip));
+					inet_pton(AF_INET, value, &(announce_data->ip));
 
 				} else if(strlen(peer_id_str) == field_size && strncmp(peer_id_str, field, strlen(peer_id_str)) == 0) {
-					parse_peer_id(announce_data.peer_id,value,value_size);
-					debug("peer_id: %.*s", 20, announce_data.peer_id);
+					parse_peer_id(announce_data->peer_id,value,value_size);
+					debug("peer_id: %.*s", 20, announce_data->peer_id);
 
 				} else if(strlen(compact_str) == field_size && strncmp(compact_str, field, strlen(compact_str)) == 0) {
-					announce_data.compact = read_int(value, value_size, 10);
-					debug("compact: %d", announce_data.compact);
+					announce_data->compact = read_int(value, value_size, 10);
+					debug("compact: %d", announce_data->compact);
 
 				} else if(strlen(event_str) == field_size && strncmp(event_str, field, strlen(event_str)) == 0) {
 					const static char *started = "started";
 					const static char *completed = "completed";
 					if(strlen(value) == 7 && strncmp(started, value, 7) == 0) { // again, not sure if enough safety
-						announce_data.event = 0; // 0 for started
+						announce_data->event = 0; // 0 for started
 					} else if(strlen(value) == 9 && strncmp(completed, value, 9) == 0) {
-						announce_data.event = 1; // 1 for completed
+						announce_data->event = 1; // 1 for completed
 					} else {
-						announce_data.event = 2; // 2 for stopped/other things
+						announce_data->event = 2; // 2 for stopped/other things
 						// should make sure that clients don't send events that aren't
 						// started, stopped, or completed.
-						simple_error(&announce_data, "Good for you.");
+						simple_error(announce_data, "Good for you.");
 						return 0;
 					}
 				}
@@ -430,23 +430,23 @@ int parse_announce_request(client_socket_data *data) {
 			middle_of_token = pos;
 		}
 	}
-	if (announce_data.info_hash[0] == 0) {
-		simple_error(&announce_data, "No info_hash specified.");
+	if (announce_data->info_hash[0] == 0) {
+		simple_error(announce_data, "No info_hash specified.");
 		return 0;
 	}
-	if (announce_data.port == -1) {
-		simple_error(&announce_data, "No port specified.");
+	if (announce_data->port == -1) {
+		simple_error(announce_data, "No port specified.");
 		sentinel("No port.");
 	}
-	if (announce_data.ip == -1) {
-		announce_data.ip = data->peer_ip;
+	if (announce_data->ip == -1) {
+		announce_data->ip = data->peer_ip;
 	}
 	/* These redis checks are unnecessary for a public tracker.*/
 	// redisAsyncCommand(redis, NULL, NULL, "MULTI");
 	// redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:seeds", announce_data.info_hash);
 	// redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:peers", announce_data.info_hash);
 	// redisAsyncCommand(redis, check_redis, &announce_data, "EXEC");
-	announce(&announce_data);
+	announce(announce_data);
 	return 0;
 
 	error:
@@ -469,9 +469,9 @@ static int parser_message_complete_callback(http_parser *parser) {
 	else {
 		const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi";
 		send(data->sock, reply, strlen(reply), 0);
+		data->shouldfree = 1;
 	}
 
-	data->shouldfree = 1;
 	return 0;
 }
 
