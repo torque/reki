@@ -65,7 +65,7 @@ redisAsyncContext *redis; // abuse scope for ease-of-use
 
 int intlength(int input) {
 	int length = 1;
-	for(int i = 10; i < 10000000000; i*=10) {
+	for(long i = 10; i < 10000000000; i*=10) {
 		if(input < i) {
 			return length;
 		}
@@ -75,7 +75,7 @@ int intlength(int input) {
 }
 
 long long read_int(char *str, int str_size, const int base) {
-	check(str_size <= 99, "Value is way too big, skipping.")
+	check(str_size <= 99, "Value is way too big, skipping.");
 
 	char temp[100];
 	memcpy(temp, str, str_size);
@@ -93,7 +93,7 @@ long long read_int(char *str, int str_size, const int base) {
 /* The info hash is stored in mongo, which is not binary string safe apparently,
 so it needs to be parsed to a hexadecimal string rather than a binary one. */
 int parse_info_hash(char *output, int output_length, char *input, int input_length) {
-	int pos, i = 0, val;
+	int pos, i = 0;
 	for(pos = 0; pos < input_length; pos++) {
 		check(i <= output_length, "Hash is invalid (too long).")
 		if (input[pos] == '%') {
@@ -191,24 +191,26 @@ int simple_error(tracker_announce_data *announce_data, char *message) {
 void send_reply(redisAsyncContext *redis, void *r, void *a) {
 	redisReply *reply = r;
 	if (reply == NULL) { return; }
-	debug("added: %lld", reply->element[6]->integer);
-	tracker_announce_data *announce_data = a;
+	tracker_announce_data *announce_data = (tracker_announce_data*)a;
 	client_socket_data *data = announce_data->socket_data;
-	// reply order: rem seeds, rem peers, seeds, peers,
 	redisReply *seeds = reply->element[4],
 	           *peers = reply->element[5];
 	int number_of_seeds = (int)reply->element[2]->integer,
 	    number_of_peers = (int)reply->element[3]->integer;
-  debug("seeds: %d", number_of_seeds);
+
 	peer_entry dummy_peer;
 	memset(&dummy_peer, 0, sizeof(peer_entry));
+
 	dynamic_string *tracker_reply = dynamic_string_init();
 	dynamic_string *concat_peers = dynamic_string_init();
 	int dummy_length = 51 + intlength(number_of_seeds) + intlength(number_of_peers);
-	char *dummy = malloc(dummy_length*sizeof(char));
+	char *dummy = malloc(dummy_length * sizeof(char));
+	check_mem(dummy);
 	sprintf(dummy, "d8:completei%de10:incompletei%de8:intervali%de5:peers", number_of_seeds, number_of_peers, ANNOUNCE_INTERVAL);
 	dynamic_string_append(tracker_reply, dummy, dummy_length);
+	free(dummy);
 	int i = 0;
+
 	// don't give seeds to seeds.
 	if (announce_data->left != 0) {
 		for (; i < seeds->elements && i < announce_data->numwant; i++) {
@@ -220,42 +222,43 @@ void send_reply(redisAsyncContext *redis, void *r, void *a) {
 			}
 		}
 	}
+
 	for (; i < peers->elements && i < announce_data->numwant; i++) {
 		memcpy(&dummy_peer, peers->element[i]->str, peers->element[i]->len);
-		debug("cpct: %d%d%d%d%d%d", dummy_peer.compact[0],dummy_peer.compact[1],dummy_peer.compact[2],dummy_peer.compact[3],dummy_peer.compact[4],dummy_peer.compact[5]);
 		if (announce_data->compact == 0) {
 			dynamic_string_append(concat_peers, dummy_peer.bencoded, dummy_peer.b_length);
 		} else {
 			dynamic_string_append(concat_peers, dummy_peer.compact, 6);
 		}
 	}
+
 	if (announce_data->compact == 0) {
 		dynamic_string_append(tracker_reply, "l", 1);
 		dynamic_string_join(tracker_reply, concat_peers);
 		dynamic_string_append(tracker_reply, "ee", 2);
 	} else {
-		// unsigned int len = 6*i;
-		unsigned int prefix_len = intlength(concat_peers->size) + 1;
+		int prefix_len = intlength(concat_peers->size) + 1;
 		char *dummy = malloc(prefix_len*sizeof(char));
-		sprintf(dummy, "%u:", prefix_len);
+		sprintf(dummy, "%lu:", concat_peers->size);
 		dynamic_string_append(tracker_reply, dummy, prefix_len);
 		dynamic_string_join(tracker_reply, concat_peers);
 		dynamic_string_append(tracker_reply, "e", 1);
 	}
+
 	int reply_size_length = intlength(tracker_reply->size);
 	int http_response_length = 82 + tracker_reply->size + reply_size_length;
 	char *http_response = malloc(http_response_length*sizeof(char));
 	sprintf(http_response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %lu\r\n\r\n", tracker_reply->size);
 	memcpy(http_response + 82 + reply_size_length, tracker_reply->str, tracker_reply->size);
-	// fwrite(http_response,http_response_length,1,stdout);
-	printf("\n");
+
 	send(data->sock, http_response, http_response_length, 0);
-	dynamic_string_free(tracker_reply);
 	data->shouldfree = 1;
+
+	error:
+		return;
 }
 
 void announce(tracker_announce_data *announce_data) {
-	log_info("announce");
 	// d2:ip15:255.255.255.2557:peer id20:123456789012345678904:porti60001ee
 	peer_entry peer;
 	memset(&peer, 0, sizeof(peer_entry));
@@ -273,12 +276,12 @@ void announce(tracker_announce_data *announce_data) {
 	// compact it, yo
 	memcpy(peer.compact, &(announce_data->ip), 4);
 	memcpy(peer.compact + 4, &(announce_data->port), 2);
-	debug("compact: %d%d%d%d%d%d", peer.compact[0],peer.compact[1],peer.compact[2],peer.compact[3],peer.compact[4],peer.compact[5]);
 	time_t now = time(0);
 
 	redisAsyncCommand(redis, NULL, NULL, "MULTI");
 
 	// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
+	debug("Redis key: torrent:%s", announce_data->info_hash);
 	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %ld", announce_data->info_hash, now - ANNOUNCE_INTERVAL * DROP_COUNT);
 	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %ld", announce_data->info_hash, now - ANNOUNCE_INTERVAL * DROP_COUNT);
 	// used for complete and incomplete fields in response
@@ -371,7 +374,7 @@ int parse_announce_request(client_socket_data *data) {
 				} else if(strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
 					int parsing_succeeded = parse_info_hash(announce_data.info_hash, 40, value, value_size);
 					if (parsing_succeeded == 0) {
-						printf("Info hash: %.*s\n", 40, announce_data.info_hash);
+						debug("Info hash: %.*s", 40, announce_data.info_hash);
 					} else {
 						simple_error(&announce_data, "Invalid info hash.");
 						log_info("Invalid hash: %s", value);
@@ -391,9 +394,11 @@ int parse_announce_request(client_socket_data *data) {
 
 				} else if(strlen(peer_id_str) == field_size && strncmp(peer_id_str, field, strlen(peer_id_str)) == 0) {
 					parse_peer_id(announce_data.peer_id,value,value_size);
+					debug("peer_id: %.*s", 20, announce_data.peer_id);
 
 				} else if(strlen(compact_str) == field_size && strncmp(compact_str, field, strlen(compact_str)) == 0) {
 					announce_data.compact = read_int(value, value_size, 10);
+					debug("compact: %d", announce_data.compact);
 
 				} else if(strlen(event_str) == field_size && strncmp(event_str, field, strlen(event_str)) == 0) {
 					const static char *started = "started";
@@ -428,6 +433,10 @@ int parse_announce_request(client_socket_data *data) {
 	if (announce_data.info_hash[0] == 0) {
 		simple_error(&announce_data, "No info_hash specified.");
 		return 0;
+	}
+	if (announce_data.port == -1) {
+		simple_error(&announce_data, "No port specified.");
+		sentinel("No port.");
 	}
 	if (announce_data.ip == -1) {
 		announce_data.ip = data->peer_ip;
