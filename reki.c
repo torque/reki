@@ -299,7 +299,9 @@ void announce(tracker_announce_data *announce_data) {
 	// 	// increment completed count
 	// }
 
-	redisAsyncCommand(redis, send_reply, announce_data, "EXEC");
+	tracker_announce_data *ad = malloc(sizeof(tracker_announce_data));
+	memcpy(ad, announce_data, sizeof(tracker_announce_data));
+	redisAsyncCommand(redis, send_reply, ad, "EXEC");
 }
 
 /* This function doesn't even need to exist if we're a pure public tracker */
