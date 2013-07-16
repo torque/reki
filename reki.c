@@ -116,29 +116,24 @@ int parse_info_hash(char *output, int output_length, char *input, int input_leng
 
 /* Peer id is only ever used with redis, which is binary string safe. */
 int parse_peer_id(char *output, char *input, int input_length) {
-	char *dummy = malloc(sizeof(char)*input_length);
-	check_mem(dummy);
 	int pos, i = 0;
 	for(pos = 0; pos < input_length; pos++) {
 		if (input[pos] == '%') {
 			check(pos + 2 < input_length, "String is improperly escaped.")
 
-			long long temp = read_int(input + pos + 1, 2, 16);
+			int8_t temp = read_int(input + pos + 1, 2, 16);
 			check(temp != -1, "Failed to parse %.*s as a number.", 2, input + pos * 2);
 
-			memcpy(dummy + i, &temp, 1);
+			memcpy(output + i, &temp, 1);
 			pos += 2;
 		} else {
-			memcpy(dummy + i, input + pos, 1);
+			memcpy(output + i, input + pos, 1);
 		}
-		pos++;
 		i++;
 	}
-	output = dummy;
 	return 0;
 
 	error:
-		if(dummy) free(dummy);
 		return -1;
 }
 
