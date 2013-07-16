@@ -42,7 +42,7 @@ typedef struct {
 typedef struct {
 	char peer_id[20];
 	char info_hash[40];
-	uint8_t port;
+	int port;
 	long long left;
 	int compact;
 	int event;
@@ -379,7 +379,8 @@ int parse_announce_request(client_socket_data *data) {
 					}
 
 				} else if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
-					announce_data.port = read_int(value, value_size, 10);
+					long long temp = read_int(value, value_size, 10);
+					announce_data.port = (int)temp;
 					if(announce_data.port < 0 || announce_data.port > 65335) {
 						simple_error(&announce_data, "Invalid port.");
 						log_info("Invalid port: %.*s -> %d", value_size, value, announce_data.port);
