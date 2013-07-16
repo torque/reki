@@ -41,7 +41,7 @@ typedef struct {
 
 typedef struct {
 	char peer_id[20];
-	char info_hash[40];
+	char info_hash[41]; //strlen needs to work
 	int port;
 	long long left;
 	int compact;
