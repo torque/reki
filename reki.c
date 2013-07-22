@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <ev.h>
+#include <fcntl.h>
 #include <hiredis/hiredis.h>
 #include <hiredis/async.h>
 #include <hiredis/adapters/libev.h>
@@ -195,6 +196,56 @@ int simple_error(client_socket_data *data, char *message) {
 		return -1;
 }
 
+static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
+	int err;
+	socklen_t len = sizeof(err);
+	getsockopt(watcher->fd, SOL_SOCKET, SO_ERROR, &err, &len);
+	if(err != 0) {
+		errno = err;
+		perror("Problem connecting");
+		return;
+	}
+	tracker_announce_data *announce_data = (tracker_announce_data*)watcher->data;
+	char query[93];
+	sprintf(query, "GET /tracker/%.*s/snatched HTTP/1.0\r\nHost: localhost\r\n\r\n", 40, announce_data->info_hash);
+	send(watcher->fd, query, strlen(query), 0);
+
+	ev_io_stop(loop, watcher);
+	close(watcher->fd); // don't even care about the response
+}
+
+void increment_completion_count(tracker_announce_data *announce_data) {
+	int sock = socket(AF_INET, SOCK_STREAM, 6); // hardcoding things is totally 9001% futureproof
+	if(sock == -1) {
+		perror("Could not create socket");
+		return;
+	}
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(9000);
+	addr.sin_addr.s_addr = htonl(0x7F000001); // 127.0.0.1
+
+	int socket_flags = fcntl(sock, F_GETFL, 0);
+	if(socket_flags == -1) {
+		perror("Could not get socket flags");
+		return;
+	}
+	int retval = fcntl(sock, F_SETFL, socket_flags | O_NONBLOCK);
+	if(retval == -1) {
+		perror("Could not set socket flags");
+		return;
+	}
+
+	ev_io *write_watcher = (ev_io*)malloc(sizeof(ev_io));
+	write_watcher->data = (void*)announce_data;
+
+	ev_io_init(write_watcher, write_callback, sock, EV_WRITE);
+
+	ev_io_start(announce_data->socket_data->loop, write_watcher);
+	connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr));
+}
+
 void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	redisReply *reply = r;
 	if (reply == NULL) { return; }
@@ -308,9 +359,9 @@ void announce(tracker_announce_data *announce_data) {
 		redisAsyncCommand(redis, NULL, NULL, "ZADD torrent:%s:peers %ld %b", announce_data->info_hash, now, &peer, sizeof(peer));
 	}
 
-	// if (announce_data->event == 1 ) {
-	// 	// increment completed count
-	// }
+	if (announce_data->event == 1 ) {
+		increment_completion_count(announce_data);
+	}
 	redisAsyncCommand(redis, send_announce_reply, announce_data, "EXEC");
 }
 
@@ -710,7 +761,7 @@ int main()
 	}
 
 	struct sockaddr_in addr;
-	bzero(&addr, sizeof(addr));
+	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(PORT);
 	addr.sin_addr.s_addr = INADDR_ANY;
