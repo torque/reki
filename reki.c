@@ -726,7 +726,9 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 void sigint_callback(EV_P_ ev_signal *w, int revents)
 {
 		printf("\nSIGINT caught.\n");
-		redisAsyncDisconnect(redis);
+		if (!redis->err) {
+			redisAsyncDisconnect(redis);
+		}
 		ev_unloop(EV_A_ EVUNLOOP_ALL);
 }
 
