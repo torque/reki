@@ -299,6 +299,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 		char *dummy = malloc(prefix_len*sizeof(char));
 		sprintf(dummy, "%lu:", concat_peers->size);
 		dynamic_string_append(tracker_reply, dummy, prefix_len);
+		free(dummy);
 		dynamic_string_join(tracker_reply, concat_peers);
 		dynamic_string_append(tracker_reply, "e", 1);
 	}
@@ -310,6 +311,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	memcpy(http_response + 82 + reply_size_length, tracker_reply->str, tracker_reply->size);
 
 	int retval = send(data->sock, http_response, http_response_length, 0);
+	free(http_response);
 	if(retval == -1) {
 		printf("%s\n", strerror(errno));
 	}
@@ -532,6 +534,8 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 	if(retval == -1) {
 		printf("%s\n", strerror(errno));
 	}
+	free(http_response);
+	free(scrape_data);
 	data->shouldfree = 1;
 }
 
