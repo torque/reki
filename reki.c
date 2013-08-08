@@ -348,14 +348,14 @@ void announce(tracker_announce_data *announce_data) {
 	// compact it, yo
 	memcpy(peer.compact, &(announce_data->ip), 4);
 	memcpy(peer.compact + 4, &(announce_data->port), 2);
-	time_t now = time(0);
-
+	unsigned long long now = (unsigned long long)time(0) * 1000;
+	unsigned long long then = now - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
 	redisAsyncCommand(redis, NULL, NULL, "MULTI");
 
 	// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
 	debug("Redis key: torrent:%s", announce_data->info_hash);
-	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %ld", announce_data->info_hash, now - ANNOUNCE_INTERVAL * DROP_COUNT);
-	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %ld", announce_data->info_hash, now - ANNOUNCE_INTERVAL * DROP_COUNT);
+	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %llu", announce_data->info_hash, then);
+	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %llu", announce_data->info_hash, then);
 	// used for complete and incomplete fields in response
 	redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:seeds", announce_data->info_hash);
 	redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:peers", announce_data->info_hash);
@@ -365,9 +365,9 @@ void announce(tracker_announce_data *announce_data) {
 	redisAsyncCommand(redis, NULL, NULL, "ZRANGE torrent:%s:peers 0 %d", announce_data->info_hash, announce_data->numwant);
 
 	if (announce_data->left == 0) {
-		redisAsyncCommand(redis, NULL, NULL, "ZADD torrent:%s:seeds %ld %b", announce_data->info_hash, now, &peer, sizeof(peer));
+		redisAsyncCommand(redis, NULL, NULL, "ZADD torrent:%s:seeds %llu %b", announce_data->info_hash, now, &peer, sizeof(peer));
 	} else {
-		redisAsyncCommand(redis, NULL, NULL, "ZADD torrent:%s:peers %ld %b", announce_data->info_hash, now, &peer, sizeof(peer));
+		redisAsyncCommand(redis, NULL, NULL, "ZADD torrent:%s:peers %llu %b", announce_data->info_hash, now, &peer, sizeof(peer));
 	}
 
 	if (announce_data->event == 1 ) {
@@ -549,13 +549,14 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 }
 
 void scrape(tracker_scrape_data *scrape_data) {
-	time_t now = time(0);
+	unsigned long long now = (unsigned long long)time(0) * 1000;
+	unsigned long long then = now - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
 	redisAsyncCommand(redis, NULL, NULL, "MULTI");
 	for (int i = 0; i < scrape_data->num; i++) {
 		// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
 		debug("Scrape: torrent:%s", scrape_data->info_hashes[i]);
-		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %ld", scrape_data->info_hashes[i], now - ANNOUNCE_INTERVAL * DROP_COUNT);
-		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %ld", scrape_data->info_hashes[i], now - ANNOUNCE_INTERVAL * DROP_COUNT);
+		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %llu", scrape_data->info_hashes[i], then);
+		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %llu", scrape_data->info_hashes[i], then);
 		// used for complete and incomplete fields in response
 		redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:seeds", scrape_data->info_hashes[i]);
 		redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:peers", scrape_data->info_hashes[i]);
