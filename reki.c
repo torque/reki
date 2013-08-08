@@ -22,7 +22,16 @@
 #include "dynamic_string.h"
 #include "http-parser/http_parser.h"
 
-#define PORT 9001
+#ifdef PRODUCTION
+	#define PORT 9001
+	#define SITE_PORT 9000
+	#define DATABASE 0
+#else
+	#define PORT 3001
+	#define SITE_PORT 3000
+	#define DATABASE 1
+#endif
+
 #define READSIZE 1024
 #define REDIS_PORT 6379
 #define ANNOUNCE_INTERVAL 1800
@@ -223,7 +232,7 @@ void increment_completion_count(tracker_announce_data *announce_data) {
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(9000);
+	addr.sin_port = htons(SITE_PORT);
 	addr.sin_addr.s_addr = htonl(0x7F000001); // 127.0.0.1
 
 	int socket_flags = fcntl(sock, F_GETFL, 0);
