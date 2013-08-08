@@ -135,7 +135,7 @@ int parse_peer_id(char *output, char *input, int input_length) {
 		if (input[pos] == '%') {
 			check(pos + 2 < input_length, "String is improperly escaped.")
 
-			int8_t temp = read_int(input + pos + 1, 2, 16);
+			int16_t temp = read_int(input + pos + 1, 2, 16);
 			check(temp != -1, "Failed to parse %.*s as a number.", 2, input + pos * 2);
 
 			memcpy(output + i, &temp, 1);
