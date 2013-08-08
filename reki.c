@@ -538,7 +538,6 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 	char *http_response = malloc(http_response_length*sizeof(char));
 	sprintf(http_response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %lu\r\n\r\n", scrape_reply->size);
 	memcpy(http_response + 82 + reply_size_length, scrape_reply->str, scrape_reply->size);
-
 	int retval = send(data->sock, http_response, http_response_length, 0);
 	if(retval == -1) {
 		printf("%s\n", strerror(errno));
@@ -735,7 +734,8 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 
 void sigint_callback(EV_P_ ev_signal *w, int revents)
 {
-		printf("\nSIGINT caught.\n");
+		puts("");
+		log_warn("SIGINT caught.");
 		if (!redis->err) {
 			redisAsyncDisconnect(redis);
 		}
@@ -744,18 +744,18 @@ void sigint_callback(EV_P_ ev_signal *w, int revents)
 
 void redis_connect_callback(const redisAsyncContext *redis, int status) {
 	if (status != REDIS_OK) {
-		printf("Error: %s\n", redis->errstr);
+		log_err("Error: %s", redis->errstr);
 		return;
 	}
-	printf("Connected to redis-server on port %d.\n",REDIS_PORT);
+	log_info ("Connected to redis-server on port %d.",REDIS_PORT);
 }
 
 void redis_disconnect_callback(const redisAsyncContext *redis, int status) {
 	if (status != REDIS_OK) {
-		printf("Error: %s\n", redis->errstr);
+		log_err("Error: %s", redis->errstr);
 		return;
 	}
-	printf("Disconnected from redis_server.\n");
+	log_info("Disconnected from redis_server.");
 }
 
 int main()
@@ -793,6 +793,7 @@ int main()
 		perror("Could not listen");
 		return 1;
 	}
+	log_info("Tracker started on port %d", PORT);
 
 	struct ev_loop *loop = ev_default_loop(0);
 	ev_io *accept_watcher = (ev_io*)malloc(sizeof(ev_io));
@@ -800,10 +801,11 @@ int main()
 
 	redis = redisAsyncConnect("127.0.0.1", REDIS_PORT);
 	if (redis->err) {
-		printf("Failed to connect to redis-server: %s\n", redis->errstr);
+		log_err("Failed to connect to redis-server: %s", redis->errstr);
 		redisAsyncFree(redis);
 		return 1;
 	}
+	redisAsyncCommand(redis, NULL, NULL, "SELECT %d", DATABASE);
 	redisLibevAttach(EV_DEFAULT_ redis);
 	redisAsyncSetConnectCallback(redis,redis_connect_callback);
 	redisAsyncSetDisconnectCallback(redis,redis_disconnect_callback);
@@ -817,7 +819,7 @@ int main()
 
 	ev_io_stop(loop, accept_watcher);
 	ev_signal_stop(loop, &sigint_watcher);
-	printf("Closing connection\n");
+	log_info("Closing connection");
 	free(accept_watcher);
 	ev_loop_destroy(loop);
 	close(sock);
