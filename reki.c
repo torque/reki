@@ -320,10 +320,11 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	memcpy(http_response + 82 + reply_size_length, tracker_reply->str, tracker_reply->size);
 
 	int retval = send(data->sock, http_response, http_response_length, 0);
-	free(http_response);
 	if(retval == -1) {
 		printf("%s\n", strerror(errno));
 	}
+	free(http_response);
+	free(announce_data);
 	data->shouldfree = 1;
 
 	error:
