@@ -612,13 +612,13 @@ void parse_scrape_request(client_socket_data *data) {
 				debug("%.*s = %.*s", field_size, field, value_size, value);
 
 				if(strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
+					if (encount == scrape_data->num) {
+						scrape_data->info_hashes = realloc(scrape_data->info_hashes, scrape_data->num*sizeof(char *));
+						scrape_data->num++;
+						scrape_data->info_hashes[encount] = calloc(41, sizeof(char));
+					}
 					int parsing_succeeded = parse_info_hash(scrape_data->info_hashes[encount], 40, value, value_size);
 					if (parsing_succeeded == 0) {
-						if (encount == scrape_data->num) {
-							scrape_data->info_hashes = realloc(scrape_data->info_hashes, scrape_data->num*sizeof(char *));
-							scrape_data->num++;
-							scrape_data->info_hashes[encount] = calloc(41, sizeof(char));
-						}
 						debug("Info hash: %.*s", 40, scrape_data->info_hashes[encount]);
 						encount++;
 					} else {
