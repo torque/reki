@@ -515,6 +515,16 @@ void parse_announce_request(client_socket_data *data) {
 		data->shouldfree = 1;
 		return;
 }
+
+void free_scrape_data(tracker_scrape_data *scrape_data) {
+	int i;
+	for (i = 0; i < scrape_data->num; i++) {
+		free(scrape_data->info_hashes[i]);
+	}
+	free(scrape_data->info_hashes);
+	free(scrape_data);
+}
+
 //d5:filesd20:....................d8:completei5e10:downloadedi50e10:incompletei10eeee
 void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 	redisReply *reply = r;
@@ -547,7 +557,7 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 		printf("%s\n", strerror(errno));
 	}
 	free(http_response);
-	free(scrape_data);
+	free_scrape_data(scrape_data);
 	data->shouldfree = 1;
 }
 
@@ -567,7 +577,7 @@ void scrape(tracker_scrape_data *scrape_data) {
 	redisAsyncCommand(redis, send_scrape_reply, scrape_data, "EXEC");
 }
 
-int parse_scrape_request(client_socket_data *data) {
+void parse_scrape_request(client_socket_data *data) {
 	tracker_scrape_data *scrape_data = calloc(1, sizeof(tracker_scrape_data));
 	scrape_data->socket_data = data;
 	scrape_data->info_hashes = malloc(sizeof(char*));
@@ -632,13 +642,15 @@ int parse_scrape_request(client_socket_data *data) {
 	}
 	if (scrape_data->info_hashes[0][0] == 0) {
 		simple_error(scrape_data->socket_data, "Not without an info_hash.");
-		sentinel("I don't like your scrape.")
+		sentinel("Bad scrape request.")
 	}
 	scrape(scrape_data);
-	return 0;
+	return;
 
 	error:
-		return -1;
+		if(scrape_data) free_scrape_data(scrape_data);
+		data->shouldfree = 1;
+		return;
 }
 
 static int parser_message_complete_callback(http_parser *parser) {
