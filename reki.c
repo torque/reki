@@ -518,7 +518,7 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 	tracker_scrape_data *scrape_data = s;
 	client_socket_data *data = scrape_data->socket_data;
 	dynamic_string *scrape_reply = dynamic_string_init();
-	dynamic_string_append(scrape_reply, "d5:filesd", 8);
+	dynamic_string_append(scrape_reply, "d5:filesd", 9);
 	char hsh[20];
 	char d1[23];
 	char d2[100];
