@@ -464,9 +464,9 @@ void parse_announce_request(client_socket_data *data) {
 				} else if(strlen(event_str) == field_size && strncmp(event_str, field, strlen(event_str)) == 0) {
 					const static char *started = "started";
 					const static char *completed = "completed";
-					if(strlen(value) == 7 && strncmp(started, value, 7) == 0) { // again, not sure if enough safety
+					if(value_size == 7 && strncmp(started, value, 7) == 0) {
 						announce_data->event = 0; // 0 for started
-					} else if(strlen(value) == 9 && strncmp(completed, value, 9) == 0) {
+					} else if(value_size == 9 && strncmp(completed, value, 9) == 0) {
 						announce_data->event = 1; // 1 for completed
 					} else {
 						announce_data->event = 2; // 2 for stopped/other things
