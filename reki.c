@@ -394,7 +394,7 @@ void announce(tracker_announce_data *announce_data) {
 
 // }
 
-int parse_announce_request(client_socket_data *data) {
+void parse_announce_request(client_socket_data *data) {
 	tracker_announce_data *announce_data = calloc(1, sizeof(tracker_announce_data));
 	announce_data->socket_data = data;
 	announce_data->port = -1;
@@ -434,8 +434,7 @@ int parse_announce_request(client_socket_data *data) {
 						debug("Info hash: %.*s", 40, announce_data->info_hash);
 					} else {
 						simple_error(announce_data->socket_data, "Invalid info hash.");
-						log_info("Invalid hash: %s", value);
-						return 0;
+						sentinel("Invalid hash: %s", value);
 					}
 
 				} else if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
@@ -446,7 +445,7 @@ int parse_announce_request(client_socket_data *data) {
 					announce_data->port = (int)temp;
 					if(announce_data->port < 0 || announce_data->port > 65335) {
 						simple_error(announce_data->socket_data, "Invalid port.");
-						log_info("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
+						sentinel("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
 					}
 
 				} else if(strlen(ip_str) == field_size && strncmp(ip_str, field, strlen(ip_str)) == 0) {
@@ -491,7 +490,7 @@ int parse_announce_request(client_socket_data *data) {
 	}
 	if (announce_data->info_hash[0] == 0) {
 		simple_error(announce_data->socket_data, "No info_hash specified.");
-		return 0;
+		sentinel("No info_hash.");
 	}
 	if (announce_data->port == -1) {
 		simple_error(announce_data->socket_data, "No port specified.");
@@ -506,10 +505,12 @@ int parse_announce_request(client_socket_data *data) {
 	// redisAsyncCommand(redis, NULL, NULL, "ZCARD torrent:%s:peers", announce_data.info_hash);
 	// redisAsyncCommand(redis, check_redis, &announce_data, "EXEC");
 	announce(announce_data);
-	return 0;
+	return;
 
 	error:
-		return -1;
+		if (announce_data) free(announce_data);
+		data->shouldfree = 1;
+		return;
 }
 //d5:filesd20:....................d8:completei5e10:downloadedi50e10:incompletei10eeee
 void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
