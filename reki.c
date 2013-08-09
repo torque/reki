@@ -443,7 +443,7 @@ void parse_announce_request(client_socket_data *data) {
 				} else if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
 					long long temp = read_int(value, value_size, 10);
 					announce_data->port = (int)temp;
-					if(announce_data->port < 0 || announce_data->port > 65335) {
+					if(announce_data->port < 0 || announce_data->port > 0xffff) {
 						simple_error(announce_data->socket_data, "Invalid port.");
 						sentinel("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
 					}
