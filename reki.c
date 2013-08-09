@@ -469,10 +469,11 @@ void parse_announce_request(client_socket_data *data) {
 					} else if(value_size == 9 && strncmp(completed, value, 9) == 0) {
 						announce_data->event = 1; // 1 for completed
 					} else {
-						announce_data->event = 2; // 2 for stopped/other things
-						// should make sure that clients don't send events that aren't
-						// started, stopped, or completed.
-						return 0;
+						/* stopped, assuming clients don't send other events I don't know about.
+						probably would be good to remove the peer from the sorted set, but
+						that would require effort. */
+						simple_error("Bye.");
+						sentinel("Quitter.");
 					}
 				}
 			}
