@@ -472,7 +472,7 @@ void parse_announce_request(client_socket_data *data) {
 						/* stopped, assuming clients don't send other events I don't know about.
 						probably would be good to remove the peer from the sorted set, but
 						that would require effort. */
-						simple_error("Bye.");
+						simple_error(announce_data->socket_data, "Bye.");
 						sentinel("Quitter.");
 					}
 				}
