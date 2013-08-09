@@ -179,7 +179,7 @@ int hex_to_string(char *output, char *input) {
 		return -1;
 }
 
-int simple_error(client_socket_data *data, char *message) {
+void simple_error(client_socket_data *data, char *message) {
 	int message_length = strlen(message);
 	int failure_reason_length = 20 + message_length + intlength(message_length);
 	int http_response_length = 82 + failure_reason_length + intlength(failure_reason_length);
@@ -197,12 +197,12 @@ int simple_error(client_socket_data *data, char *message) {
 
 	free(failure_reason);
 	free(http_response);
-	return 0;
+	return;
 
 	error:
 		if(failure_reason) free(failure_reason);
 		if(http_response) free(http_response);
-		return -1;
+		return;
 }
 
 static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
