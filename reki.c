@@ -427,8 +427,6 @@ void parse_announce_request(client_socket_data *data) {
 				char *value = data->url->str + middle_of_token + 1;
 				int value_size = end_of_token - middle_of_token - 1;
 
-				debug("%.*s = %.*s", field_size, field, value_size, value);
-
 				if(strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
 					int parsing_succeeded = parse_info_hash(announce_data->info_hash, 40, value, value_size);
 					if (parsing_succeeded == 0) {
@@ -440,6 +438,7 @@ void parse_announce_request(client_socket_data *data) {
 
 				} else if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
 					announce_data->left = read_int(value, value_size, 10);
+					debug("Left: %lld", announce_data->left);
 
 				} else if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
 					long long temp = read_int(value, value_size, 10);
@@ -448,9 +447,11 @@ void parse_announce_request(client_socket_data *data) {
 						simple_error(announce_data->socket_data, "Invalid port.");
 						sentinel("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
 					}
+					debug("Port: %d", announce_data->port);
 
 				} else if(strlen(ip_str) == field_size && strncmp(ip_str, field, strlen(ip_str)) == 0) {
 					inet_pton(AF_INET, value, &(announce_data->ip));
+					debug("IP: %d", announce_data->ip);
 
 				} else if(strlen(peer_id_str) == field_size && strncmp(peer_id_str, field, strlen(peer_id_str)) == 0) {
 					parse_peer_id(announce_data->peer_id,value,value_size);
