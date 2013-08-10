@@ -325,6 +325,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	}
 	free(http_response);
 	free(announce_data);
+	dynamic_string_free(tracker_reply);
 	data->shouldfree = 1;
 
 	error:
@@ -557,6 +558,7 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 		printf("%s\n", strerror(errno));
 	}
 	free(http_response);
+	dynamic_string_free(scrape_reply);
 	free_scrape_data(scrape_data);
 	data->shouldfree = 1;
 }
