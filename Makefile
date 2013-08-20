@@ -8,7 +8,7 @@ all: reki
 
 production: reki
 
-reki: reki.o http-parser/http_parser.o dynamic_string.o
+reki: reki.o http-parser/http_parser.o dynamic_string.o common.o announce.o scrape.o
 	$(CC) -o $@ $^ $(LIBS) $(CFLAGS)
 
 clean:
