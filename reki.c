@@ -6,7 +6,7 @@ static int parser_message_complete_callback(http_parser *parser) {
 	// printf("URL requested was: %.*s\n", (int)data->url->size, data->url->str);
 	char ip[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &(data->peer_ip), ip, INET_ADDRSTRLEN);
-	log_info("%s requested %.*s", ip, (int)data->url->size, data->url->str);
+	dbg_info("%s requested %.*s", ip, (int)data->url->size, data->url->str);
 
 	if (data->url->size >= strlen(announce_base_url)) {
 		if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
@@ -36,7 +36,7 @@ static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 
 	read_length = recv(watcher->fd, buffer, READSIZE, 0);
 	if(read_length == -1) {
-		perror("Could not read");
+		fancy_perror("Could not read");
 		return;
 	}
 
@@ -61,7 +61,7 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	socklen_t client_addr_len = sizeof(client_addr);
 	int client_sock = accept(watcher->fd, (struct sockaddr *)&client_addr, &client_addr_len);
 	if(client_sock == -1) {
-		perror("Could not accept connection");
+		fancy_perror("Could not accept connection");
 		return;
 	}
 
@@ -92,7 +92,7 @@ static void accept_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 void sigint_callback(EV_P_ ev_signal *w, int revents)
 {
 		puts("");
-		log_warn("SIGINT caught.");
+		log_err("SIGINT caught.");
 		if (!redis->err) {
 			redisAsyncDisconnect(redis);
 		}
@@ -102,9 +102,9 @@ void sigint_callback(EV_P_ ev_signal *w, int revents)
 void redis_connect_callback(const redisAsyncContext *redis, int status) {
 	if (status != REDIS_OK) {
 		log_err("Redis connection error: %s", redis->errstr);
-		return;
+		exit(1);
 	}
-	log_info ("Connected to redis-server on port %d.",REDIS_PORT);
+	log_info("Connected to redis-server on port %d.",REDIS_PORT);
 }
 
 void redis_disconnect_callback(const redisAsyncContext *redis, int status) {
@@ -119,17 +119,20 @@ int main()
 {
 	int retval;
 
+	log_info("Connecting to redis-server on port %d", REDIS_PORT);
+	redis = redisAsyncConnect("127.0.0.1", REDIS_PORT);
+
 	// Create socket
 	int sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock == -1) {
-		perror("Could not create socket");
+		fancy_perror("Could not create socket");
 		return 1;
 	}
 
 	int socketoption = 1;
 	retval = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &socketoption, sizeof(socketoption));
 	if(retval == -1) {
-		perror("Could not set socket options");
+		fancy_perror("Could not set socket options");
 		return 1;
 	}
 
@@ -141,27 +144,21 @@ int main()
 
 	retval = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
 	if(retval == -1) {
-		perror("Could not bind");
+		fancy_perror("Could not bind");
 		return 1;
 	}
 
 	retval = listen(sock, 1000 /*backlog*/);
 	if(retval == -1) {
-		perror("Could not listen");
+		fancy_perror("Could not listen");
 		return 1;
 	}
-	log_info("Tracker started on port %d", PORT);
+	log_info("Starting tracker on port %d", PORT);
 
 	struct ev_loop *loop = ev_default_loop(0);
 	ev_io *accept_watcher = (ev_io*)malloc(sizeof(ev_io));
 	ev_io_init(accept_watcher, accept_callback, sock, EV_READ);
 
-	redis = redisAsyncConnect("127.0.0.1", REDIS_PORT);
-	if (redis->err) {
-		log_err("Failed to connect to redis-server: %s", redis->errstr);
-		redisAsyncFree(redis);
-		return 1;
-	}
 	redisAsyncCommand(redis, NULL, NULL, "SELECT %d", DATABASE);
 	redisLibevAttach(EV_DEFAULT_ redis);
 	redisAsyncSetConnectCallback(redis,redis_connect_callback);
@@ -176,7 +173,7 @@ int main()
 
 	ev_io_stop(loop, accept_watcher);
 	ev_signal_stop(loop, &sigint_watcher);
-	log_info("Closing connection");
+	log_info("Shutting down.");
 	free(accept_watcher);
 	ev_loop_destroy(loop);
 	close(sock);

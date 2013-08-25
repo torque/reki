@@ -112,9 +112,4 @@ void simple_error(client_socket_data *data, char *message) {
 	free(failure_reason);
 	free(http_response);
 	return;
-
-	error:
-		if(failure_reason) free(failure_reason);
-		if(http_response) free(http_response);
-		return;
 }

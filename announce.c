@@ -16,7 +16,7 @@ static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	getsockopt(watcher->fd, SOL_SOCKET, SO_ERROR, &err, &len);
 	if(err != 0) {
 		errno = err;
-		perror("Problem connecting");
+		fancy_perror("Problem connecting");
 		return;
 	}
 	tracker_announce_data *announce_data = (tracker_announce_data*)watcher->data;
@@ -31,7 +31,7 @@ static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 void increment_completion_count(tracker_announce_data *announce_data) {
 	int sock = socket(AF_INET, SOCK_STREAM, 6); // hardcoding things is totally 9001% futureproof
 	if(sock == -1) {
-		perror("Could not create socket");
+		fancy_perror("Could not create socket");
 		return;
 	}
 	struct sockaddr_in addr;
@@ -42,12 +42,12 @@ void increment_completion_count(tracker_announce_data *announce_data) {
 
 	int socket_flags = fcntl(sock, F_GETFL, 0);
 	if(socket_flags == -1) {
-		perror("Could not get socket flags");
+		fancy_perror("Could not get socket flags");
 		return;
 	}
 	int retval = fcntl(sock, F_SETFL, socket_flags | O_NONBLOCK);
 	if(retval == -1) {
-		perror("Could not set socket flags");
+		fancy_perror("Could not set socket flags");
 		return;
 	}
 
@@ -132,9 +132,6 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	free(announce_data);
 	dynamic_string_free(tracker_reply);
 	data->shouldfree = 1;
-
-	error:
-		return;
 }
 
 void announce(tracker_announce_data *announce_data) {
@@ -160,7 +157,7 @@ void announce(tracker_announce_data *announce_data) {
 	redisAsyncCommand(redis, NULL, NULL, "MULTI");
 
 	// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
-	debug("Redis key: torrent:%s", announce_data->info_hash);
+	dbg_info("Redis key: torrent:%s", announce_data->info_hash);
 	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %llu", announce_data->info_hash, then);
 	redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %llu", announce_data->info_hash, then);
 	// used for complete and incomplete fields in response
@@ -197,15 +194,15 @@ void parse_announce_request(client_socket_data *data) {
 			int end_of_token = pos;
 
 			if(beginning_of_token == end_of_token) {
-				debug("No param");
+				dbg_info("No param");
 				error = 1;
 			}
 			if(!error & (middle_of_token == -1)) {
-				debug("Missing =");
+				dbg_info("Missing =");
 				error = 1;
 			}
 			if(!error & (beginning_of_token == middle_of_token || middle_of_token == end_of_token - 1)) {
-				debug("Missing either field or value");
+				dbg_info("Missing either field or value");
 				error = 1;
 			}
 
@@ -218,36 +215,38 @@ void parse_announce_request(client_socket_data *data) {
 				if(strlen(info_hash_str) == field_size && strncmp(info_hash_str, field, strlen(info_hash_str)) == 0) {
 					int parsing_succeeded = parse_info_hash(announce_data->info_hash, 40, value, value_size);
 					if (parsing_succeeded == 0) {
-						debug("Info hash: %.*s", 40, announce_data->info_hash);
+						dbg_info("Info hash: %.*s", 40, announce_data->info_hash);
 					} else {
 						simple_error(announce_data->socket_data, "Invalid info hash.");
-						sentinel("Invalid hash: %s", value);
+						dbg_warn("Invalid hash: %s", value);
+						goto error;
 					}
 
 				} else if(strlen(left_str) == field_size && strncmp(left_str, field, strlen(left_str)) == 0) {
 					announce_data->left = read_int(value, value_size, 10);
-					debug("Left: %lld", announce_data->left);
+					dbg_info("Left: %lld", announce_data->left);
 
 				} else if(strlen(port_str) == field_size && strncmp(port_str, field, strlen(port_str)) == 0) {
 					long long temp = read_int(value, value_size, 10);
 					announce_data->port = (int)temp;
 					if(announce_data->port < 0 || announce_data->port > 0xffff) {
 						simple_error(announce_data->socket_data, "Invalid port.");
-						sentinel("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
+						dbg_warn("Invalid port: %.*s -> %d", value_size, value, announce_data->port);
+						goto error;
 					}
-					debug("Port: %d", announce_data->port);
+					dbg_info("Port: %d", announce_data->port);
 
 				} else if(strlen(ip_str) == field_size && strncmp(ip_str, field, strlen(ip_str)) == 0) {
 					inet_pton(AF_INET, value, &(announce_data->ip));
-					debug("IP: %d", announce_data->ip);
+					dbg_info("IP: %d", announce_data->ip);
 
 				} else if(strlen(peer_id_str) == field_size && strncmp(peer_id_str, field, strlen(peer_id_str)) == 0) {
 					parse_peer_id(announce_data->peer_id,value,value_size);
-					debug("peer_id: %.*s", 20, announce_data->peer_id);
+					dbg_info("peer_id: %.*s", 20, announce_data->peer_id);
 
 				} else if(strlen(compact_str) == field_size && strncmp(compact_str, field, strlen(compact_str)) == 0) {
 					announce_data->compact = read_int(value, value_size, 10);
-					debug("compact: %d", announce_data->compact);
+					dbg_info("compact: %d", announce_data->compact);
 
 				} else if(strlen(event_str) == field_size && strncmp(event_str, field, strlen(event_str)) == 0) {
 					const static char *started = "started";
@@ -261,7 +260,8 @@ void parse_announce_request(client_socket_data *data) {
 						probably would be good to remove the peer from the sorted set, but
 						that would require effort. */
 						simple_error(announce_data->socket_data, "Bye.");
-						sentinel("Quitter.");
+						dbg_warn("Quitter.");
+						goto error;
 					}
 				}
 			}
@@ -273,7 +273,7 @@ void parse_announce_request(client_socket_data *data) {
 		}
 		else if(data->url->str[pos] == '=') {
 			if(middle_of_token !=  -1) {
-				debug("Double =");
+				dbg_info("Double =");
 				error = 1;
 			}
 			middle_of_token = pos;
@@ -281,11 +281,13 @@ void parse_announce_request(client_socket_data *data) {
 	}
 	if (announce_data->info_hash[0] == 0) {
 		simple_error(announce_data->socket_data, "No info_hash specified.");
-		sentinel("No info_hash.");
+		dbg_warn("No info_hash.");
+		goto error;
 	}
 	if (announce_data->port == -1) {
 		simple_error(announce_data->socket_data, "No port specified.");
-		sentinel("No port.");
+		dbg_warn("No port.");
+		goto error;
 	}
 	if (announce_data->ip == -1) {
 		announce_data->ip = data->peer_ip;

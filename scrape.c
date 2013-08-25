@@ -54,7 +54,7 @@ void scrape(tracker_scrape_data *scrape_data) {
 	redisAsyncCommand(redis, NULL, NULL, "MULTI");
 	for (int i = 0; i < scrape_data->num; i++) {
 		// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
-		debug("Scrape: torrent:%s", scrape_data->info_hashes[i]);
+		dbg_info("Scrape: torrent:%s", scrape_data->info_hashes[i]);
 		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:seeds 0 %llu", scrape_data->info_hashes[i], then);
 		redisAsyncCommand(redis, NULL, NULL, "ZREMRANGEBYSCORE torrent:%s:peers 0 %llu", scrape_data->info_hashes[i], then);
 		// used for complete and incomplete fields in response
@@ -78,15 +78,15 @@ void parse_scrape_request(client_socket_data *data) {
 			int end_of_token = pos;
 
 			if(beginning_of_token == end_of_token) {
-				debug("No param");
+				dbg_info("No param");
 				error = 1;
 			}
 			if(!error & (middle_of_token == -1)) {
-				debug("Missing =");
+				dbg_info("Missing =");
 				error = 1;
 			}
 			if(!error & (beginning_of_token == middle_of_token || middle_of_token == end_of_token - 1)) {
-				debug("Missing either field or value");
+				dbg_info("Missing either field or value");
 				error = 1;
 			}
 
@@ -104,10 +104,10 @@ void parse_scrape_request(client_socket_data *data) {
 					}
 					int parsing_succeeded = parse_info_hash(scrape_data->info_hashes[encount], 40, value, value_size);
 					if (parsing_succeeded == 0) {
-						debug("Info hash: %.*s", 40, scrape_data->info_hashes[encount]);
+						dbg_info("Info hash: %.*s", 40, scrape_data->info_hashes[encount]);
 						encount++;
 					} else {
-						debug("Invalid hash: %s", value);
+						dbg_info("Invalid hash: %s", value);
 					}
 				}
 			}
@@ -119,7 +119,7 @@ void parse_scrape_request(client_socket_data *data) {
 		}
 		else if(data->url->str[pos] == '=') {
 			if(middle_of_token != -1) {
-				debug("Double =");
+				dbg_info("Double =");
 				error = 1;
 			}
 			middle_of_token = pos;
@@ -127,7 +127,8 @@ void parse_scrape_request(client_socket_data *data) {
 	}
 	if (scrape_data->info_hashes[0][0] == 0) {
 		simple_error(scrape_data->socket_data, "Not without an info_hash.");
-		sentinel("Bad scrape request.")
+		dbg_warn("Bad scrape request.");
+		goto error;
 	}
 	scrape(scrape_data);
 	return;
