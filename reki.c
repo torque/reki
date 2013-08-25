@@ -29,6 +29,15 @@ static int parser_url_callback(http_parser *parser, const char *at, size_t lengt
 	return 0;
 }
 
+static void free_watcher(client_socket_data *data) {
+	ev_io_stop(data->loop, data->watcher);
+	close(data->sock);
+	free(data->watcher);
+	free(data->parser);
+	dynamic_string_free(data->url);
+	free(data);
+}
+
 static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	static char buffer[READSIZE];
 	ssize_t read_length;
@@ -37,6 +46,7 @@ static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	read_length = recv(watcher->fd, buffer, READSIZE, 0);
 	if(read_length == -1) {
 		fancy_perror("Could not read");
+		free_watcher(data);
 		return;
 	}
 
@@ -47,12 +57,7 @@ static void read_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	}
 
 	if(data->shouldfree == 1) {
-		ev_io_stop(data->loop, data->watcher);
-		free(data->watcher);
-		free(data->parser);
-		dynamic_string_free(data->url);
-		close(data->sock);
-		free(data);
+		free_watcher(data);
 	}
 }
 
