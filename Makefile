@@ -2,7 +2,7 @@ CC = cc
 LIBS = -lev -lhiredis
 CFLAGS = -std=c99 -ggdb -Wall
 
-production: CFLAGS += -DPRODUCTION -DNDEBUG
+production: CFLAGS += -DPRODUCTION -DNDEBUG -O2
 
 all: reki
 
