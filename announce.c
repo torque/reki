@@ -82,7 +82,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 
 	dynamic_string *tracker_reply = dynamic_string_init();
 	dynamic_string *concat_peers = dynamic_string_init();
-	int dummy_length = 51 + intlength(number_of_seeds) + intlength(number_of_peers);
+	int dummy_length = 52 + intlength(number_of_seeds) + intlength(number_of_peers);
 	char *dummy = malloc(dummy_length * sizeof(char));
 	check_mem(dummy);
 	sprintf(dummy, "d8:completei%de10:incompletei%de8:intervali%de5:peers", number_of_seeds, number_of_peers, ANNOUNCE_INTERVAL);
@@ -116,7 +116,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 		dynamic_string_join(tracker_reply, concat_peers);
 		dynamic_string_append(tracker_reply, "ee", 2);
 	} else {
-		int prefix_len = intlength(concat_peers->size) + 1;
+		int prefix_len = intlength(concat_peers->size) + 2;
 		char *dummy = malloc(prefix_len*sizeof(char));
 		sprintf(dummy, "%lu:", concat_peers->size);
 		dynamic_string_append(tracker_reply, dummy, prefix_len);
