@@ -202,6 +202,7 @@ void announce(tracker_announce_data *announce_data) {
 
 void parse_announce_request(client_socket_data *data) {
 	tracker_announce_data *announce_data = calloc(1, sizeof(tracker_announce_data));
+	announce_data->socket_data = data;
 	announce_data->port = -1;
 	announce_data->left = -1;
 	announce_data->event = -1;
@@ -311,7 +312,6 @@ void parse_announce_request(client_socket_data *data) {
 	if (announce_data->ip == -1) {
 		announce_data->ip = data->peer_ip;
 	}
-	announce_data->socket_data = data;
 	announce(announce_data);
 	return;
 
