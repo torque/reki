@@ -9,6 +9,13 @@ static const char *compact_str = "compact";
 static const char *event_str = "event";
 
 static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents);
+static void close_mongo_watcher(struct ev_loop *loop, ev_io *watcher);
+
+static void close_mongo_watcher(struct ev_loop *loop, ev_io *watcher) {
+	ev_io_stop(loop, watcher);
+	close(watcher->fd);
+	free(watcher);
+}
 
 static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	int err;
@@ -16,19 +23,21 @@ static void write_callback(struct ev_loop *loop, ev_io *watcher, int revents) {
 	getsockopt(watcher->fd, SOL_SOCKET, SO_ERROR, &err, &len);
 	if(err != 0) {
 		errno = err;
-		fancy_perror("Problem connecting");
+		fancy_perror("Problem connecting to mongo");
+		close_mongo_watcher(loop, watcher);
 		return;
 	}
-	tracker_announce_data *announce_data = (tracker_announce_data*)watcher->data;
+	char *info_hash = (char*)watcher->data;
+	// tracker_announce_data *announce_data = (tracker_announce_data*)watcher->data;
 	char query[93];
-	sprintf(query, "GET /tracker/%.*s/snatched HTTP/1.0\r\nHost: localhost\r\n\r\n", 40, announce_data->info_hash);
+	sprintf(query, "GET /tracker/%.*s/snatched HTTP/1.0\r\nHost: localhost\r\n\r\n", 40, info_hash);
 	send(watcher->fd, query, strlen(query), 0);
 
-	ev_io_stop(loop, watcher);
-	close(watcher->fd); // don't even care about the response
+	free(info_hash);
+	close_mongo_watcher(loop, watcher);
 }
 
-void increment_completion_count(tracker_announce_data *announce_data) {
+void increment_completion_count(client_socket_data *data, char* info_hash) {
 	int sock = socket(AF_INET, SOCK_STREAM, 6); // hardcoding things is totally 9001% futureproof
 	if(sock == -1) {
 		fancy_perror("Could not create socket");
@@ -52,11 +61,16 @@ void increment_completion_count(tracker_announce_data *announce_data) {
 	}
 
 	ev_io *write_watcher = (ev_io*)malloc(sizeof(ev_io));
-	write_watcher->data = (void*)announce_data;
+	write_watcher->data = info_hash;
 
 	ev_io_init(write_watcher, write_callback, sock, EV_WRITE);
 
-	ev_io_start(announce_data->socket_data->loop, write_watcher);
+	ev_io_start(data->loop, write_watcher);
+	if (data->shouldfree == 1) {
+		free_client_socket_data(data);
+	} else {
+		data->shouldfree = 1;
+	}
 	connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr));
 }
 
@@ -126,12 +140,16 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 
 	int retval = send(data->sock, http_response, http_response_length, 0);
 	if(retval == -1) {
-		printf("%s\n", strerror(errno));
+		fancy_perror("Could not send to socket");
 	}
 	free(http_response);
 	free(announce_data);
 	dynamic_string_free(tracker_reply);
-	data->shouldfree = 1;
+	if (data->shouldfree == 1) {
+		free_client_socket_data(data);
+	} else {
+		data->shouldfree = 1;
+	}
 }
 
 void announce(tracker_announce_data *announce_data) {
@@ -175,14 +193,15 @@ void announce(tracker_announce_data *announce_data) {
 	}
 
 	if (announce_data->event == 1 ) {
-		increment_completion_count(announce_data);
+		char *info_hash = (char*)malloc(sizeof(char)*41);
+		memcpy(info_hash, announce_data->info_hash, 41);
+		increment_completion_count(announce_data->socket_data, info_hash);
 	}
 	redisAsyncCommand(redis, send_announce_reply, announce_data, "EXEC");
 }
 
 void parse_announce_request(client_socket_data *data) {
 	tracker_announce_data *announce_data = calloc(1, sizeof(tracker_announce_data));
-	announce_data->socket_data = data;
 	announce_data->port = -1;
 	announce_data->left = -1;
 	announce_data->event = -1;
@@ -292,11 +311,11 @@ void parse_announce_request(client_socket_data *data) {
 	if (announce_data->ip == -1) {
 		announce_data->ip = data->peer_ip;
 	}
+	announce_data->socket_data = data;
 	announce(announce_data);
 	return;
 
 	error:
 		if (announce_data) free(announce_data);
-		data->shouldfree = 1;
 		return;
 }

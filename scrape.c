@@ -45,7 +45,7 @@ void send_scrape_reply(redisAsyncContext *redis, void *r, void *s) {
 	free(http_response);
 	dynamic_string_free(scrape_reply);
 	free_scrape_data(scrape_data);
-	data->shouldfree = 1;
+	free_client_socket_data(data);
 }
 
 void scrape(tracker_scrape_data *scrape_data) {
@@ -135,6 +135,5 @@ void parse_scrape_request(client_socket_data *data) {
 
 	error:
 		if(scrape_data) free_scrape_data(scrape_data);
-		data->shouldfree = 1;
 		return;
 }

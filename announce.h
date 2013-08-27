@@ -25,7 +25,7 @@ typedef struct {
 
 static const char *announce_base_url = "/announce?";
 
-void increment_completion_count(tracker_announce_data *announce_data);
+void increment_completion_count(client_socket_data *data, char* info_hash);
 void send_announce_reply(redisAsyncContext *redis, void *r, void *a);
 void announce(tracker_announce_data *announce_data);
 void parse_announce_request(client_socket_data *data);

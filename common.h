@@ -53,6 +53,7 @@ typedef struct {
 
 redisAsyncContext *redis; // abuse scope for ease-of-use
 
+void free_client_socket_data(client_socket_data *data);
 int intlength(int input);
 long long read_int(char *str, int str_size, const int base);
 int parse_info_hash(char *output, int output_length, char *input, int input_length);

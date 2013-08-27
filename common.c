@@ -1,5 +1,15 @@
 #include "common.h"
 
+void free_client_socket_data(client_socket_data *data) {
+	dbg_warn("Freeing socket and watcher.");
+	ev_io_stop(data->loop, data->watcher);
+	close(data->sock);
+	free(data->watcher);
+	free(data->parser);
+	dynamic_string_free(data->url);
+	free(data);
+}
+
 int intlength(int input) {
 	int length = 1;
 	for(long i = 10; i < 10000000000; i*=10) {
@@ -107,8 +117,8 @@ void simple_error(client_socket_data *data, char *message) {
 	sprintf(http_response, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %u\r\n\r\n%s", failure_reason_length, failure_reason);
 
 	send(data->sock, http_response, http_response_length, 0);
-	data->shouldfree = 1;
 
+	free_client_socket_data(data);
 	free(failure_reason);
 	free(http_response);
 	return;
