@@ -64,13 +64,6 @@ void increment_completion_count(client_socket_data *data, char* info_hash) {
 	write_watcher->data = info_hash;
 
 	ev_io_init(write_watcher, write_callback, sock, EV_WRITE);
-
-	ev_io_start(data->loop, write_watcher);
-	if (data->shouldfree == 1) {
-		free_client_socket_data(data);
-	} else {
-		data->shouldfree = 1;
-	}
 	connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr));
 }
 
@@ -145,11 +138,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 	free(http_response);
 	free(announce_data);
 	dynamic_string_free(tracker_reply);
-	if (data->shouldfree == 1) {
-		free_client_socket_data(data);
-	} else {
-		data->shouldfree = 1;
-	}
+	free_client_socket_data(data);
 }
 
 void announce(tracker_announce_data *announce_data) {
@@ -262,7 +251,6 @@ void parse_announce_request(client_socket_data *data) {
 
 				} else if(strlen(peer_id_str) == field_size && strncmp(peer_id_str, field, strlen(peer_id_str)) == 0) {
 					parse_peer_id(announce_data->peer_id,value,value_size);
-					dbg_info("peer_id: %.*s", 20, announce_data->peer_id);
 
 				} else if(strlen(compact_str) == field_size && strncmp(compact_str, field, strlen(compact_str)) == 0) {
 					announce_data->compact = read_int(value, value_size, 10);
@@ -280,7 +268,6 @@ void parse_announce_request(client_socket_data *data) {
 						probably would be good to remove the peer from the sorted set, but
 						that would require effort. */
 						simple_error(announce_data->socket_data, "Bye.");
-						dbg_warn("Quitter.");
 						goto error;
 					}
 				}
