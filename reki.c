@@ -8,12 +8,10 @@ static int parser_message_complete_callback(http_parser *parser) {
 	inet_ntop(AF_INET, &(data->peer_ip), ip, INET_ADDRSTRLEN);
 	dbg_info("%s requested %.*s", ip, (int)data->url->size, data->url->str);
 
-	if (data->url->size >= strlen(announce_base_url)) {
-		if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
-			parse_announce_request(data);
-		} else if (strncmp(data->url->str, scrape_base_url, strlen(scrape_base_url)) == 0) {
-			parse_scrape_request(data);
-		}
+	if(strncmp(data->url->str, announce_base_url, strlen(announce_base_url)) == 0) {
+		parse_announce_request(data);
+	} else if (strncmp(data->url->str, scrape_base_url, strlen(scrape_base_url)) == 0) {
+		parse_scrape_request(data);
 	} else {
 		const char *reply = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi";
 		send(data->sock, reply, strlen(reply), 0);
