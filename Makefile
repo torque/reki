@@ -1,17 +1,33 @@
-CC = cc
-LIBS = -lev -lhiredis
-CFLAGS = -std=c99 -ggdb -Wall
+TARGET  := reki
+CC      := clang
+CFLAGS  := -Wall -std=c99
+LDFLAGS := -luv -lhiredis
+# http://man7.org/linux/man-pages/man7/feature_test_macros.7.html
+DEFS    := -D_XOPEN_SOURCE=600
 
-production: CFLAGS += -DPRODUCTION -DNDEBUG -O2
+SOURCE_DIRS := src
+SOURCES     := $(foreach dir, $(SOURCE_DIRS), $(wildcard $(dir)/*.c)) http-parser/http_parser.c
+OBJECTS     := $(SOURCES:.c=.o)
 
-all: reki
+.PHONY: all debug clean
 
-production: reki
+all: debug
 
-reki: reki.o http-parser/http_parser.o dynamic_string.o common.o announce.o scrape.o
-	$(CC) -o $@ $^ $(LIBS) $(CFLAGS)
+production: DEFS += -DPRODUCTION -DNDEBUG
+production: CFLAGS += -O2
+production: $(TARGET)
+
+debug: CFLAGS += -O0 -ggdb
+debug: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	@echo LINK $@
+	@$(CXX) $^ $(LDFLAGS) -o $@
+
+%.o: %.c
+	@echo CC $@
+	@$(CC) $(DEFS) $(CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) *.o
-	$(RM) *~
-	$(RM) *#
+	rm -f $(OBJECTS) $(TARGET)
+	@echo "Cleanup complete!"
