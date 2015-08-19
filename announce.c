@@ -119,7 +119,7 @@ void send_announce_reply(redisAsyncContext *redis, void *r, void *a) {
 		int prefix_len = intlength(concat_peers->size) + 2;
 		char *dummy = malloc(prefix_len*sizeof(char));
 		sprintf(dummy, "%lu:", concat_peers->size);
-		dynamic_string_append(tracker_reply, dummy, prefix_len);
+		dynamic_string_append(tracker_reply, dummy, prefix_len-1);
 		free(dummy);
 		dynamic_string_join(tracker_reply, concat_peers);
 		dynamic_string_append(tracker_reply, "e", 1);
