@@ -17,12 +17,13 @@ production: DEFS += -DPRODUCTION -DNDEBUG
 production: CFLAGS += -O2
 production: $(TARGET)
 
-debug: CFLAGS += -O0 -ggdb
+debug: CFLAGS += -O0 -ggdb -Wno-unused-function -fsanitize=address -fno-omit-frame-pointer
+debug: LDFLAGS += -fsanitize=address
 debug: $(TARGET)
 
 $(TARGET): $(OBJECTS)
 	@echo LINK $@
-	@$(CXX) $^ $(LDFLAGS) -o $@
+	@$(CC) $^ $(LDFLAGS) -o $@
 
 %.o: %.c
 	@echo CC $@
