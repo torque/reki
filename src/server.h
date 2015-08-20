@@ -14,6 +14,7 @@ struct _Server {
 
 	const char *bindIP;
 	const char *bindPort;
+	short ipFamily;
 
 	union _uvServerHandle {
 		uv_tcp_t *tcpServer;

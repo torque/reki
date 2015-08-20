@@ -265,14 +265,19 @@ int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
 int Server_listen( Server *server ) {
 	struct sockaddr_storage address;
 	checkFunction( getAddressInfo( server->bindIP, server->bindPort, &address ) );
+	server->ipFamily = address.ss_family;
+
+	unsigned int flags = 0;
+	if ( address.ss_family == AF_INET6 )
+		flags |= IPV6_V6ONLY;
 
 	switch ( server->protocol ) {
 		case ServerProtocol_TCP: {
-			checkFunction( uv_tcp_bind( server->handle->tcpServer, (struct sockaddr*)&address, 0 ) );
+			checkFunction( uv_tcp_bind( server->handle->tcpServer, (struct sockaddr*)&address, flags ) );
 			break;
 		}
 		case ServerProtocol_UDP: {
-			checkFunction( uv_udp_bind( server->handle->udpServer, (struct sockaddr*)&address, 0 ) );
+			checkFunction( uv_udp_bind( server->handle->udpServer, (struct sockaddr*)&address, flags ) );
 			log_err( "udp actually isn't supported yet." );
 			return 1;
 			// break;
