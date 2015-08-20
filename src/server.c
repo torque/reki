@@ -3,6 +3,7 @@
 #include <uv.h>
 
 #include "server.h"
+#include "macros.h"
 #include "StringBuffer.h"
 #include "client.h"
 #include "../http-parser/http_parser.h"
@@ -15,6 +16,7 @@ struct _HttpParserInfo {
 	StringBuffer *urlBuffer;
 	struct http_parser_url *url;
 	bool lastHeaderFieldWasRealIP;
+	bool httpParserDone;
 };
 
 static void uvBufferAllocStaticCb( uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf );
@@ -62,9 +64,9 @@ static void replyToClientCb( uv_write_t* reply, int status ) {
 		dbg_info( "Write error: %s", uv_err_name( status ) );
 	}
 	clientInfo *client = reply->data;
-	free( reply );
 	freeParserInfo( client->parserInfo );
 	freeClient( client );
+	free( reply );
 }
 
 static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
@@ -84,44 +86,68 @@ static int httpHeaderFieldCb( http_parser *parser, const char *at, size_t length
 }
 
 static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length ) {
+	dbg_info( "httpHeaderValueCb" );
 	HttpParserInfo *parserInfo = parser->data;
 	if ( parserInfo->lastHeaderFieldWasRealIP ) {
 		dbg_info( "%.*s", (int)length, at );
 		parserInfo->lastHeaderFieldWasRealIP = false;
+		parserInfo->httpParserDone = true;
 
-		// clientInfo *client = parserInfo->client;
+		clientInfo *client = parserInfo->client;
 		// account for null termination.
-		// client->announce->peerIp = calloc( length+1, sizeof(*client->announce->peerIp) );
-		// memcpy( client->announce->peerIp, at, length );
-		// client->announce->peerIp = (char*)at;
+		client->announce->peerIp = calloc( length+1, sizeof(*client->announce->peerIp) );
+		memcpy( client->announce->peerIp, at, length );
+		client->announce->peerIp = (char*)at;
 
-		// struct sockaddr_storage clientSocket;
-		// getAddressInfo( client->announce->peerIp, NULL, &clientSocket );
-		// client->announce->ipType = clientSocket.ss_family;
+		struct sockaddr_storage clientSocket;
+		getAddressInfo( client->announce->peerIp, NULL, &clientSocket );
+		client->announce->ipType = clientSocket.ss_family;
 	}
 	return 0;
 }
 
 static int httpHeadersCompleteCb( http_parser *parser ) {
 	dbg_info( "httpHeadersComplete" );
-	clientInfo *client = parserInfo->client;
 	HttpParserInfo *parserInfo = parser->data;
+	if ( !parserInfo->httpParserDone )
+		parserInfo->httpParserDone = true;
 
-	uv_read_stop( (uv_stream_t*)client->handle );
+	return 0;
+}
 
+void replyToClient( clientInfo *client, StringBuffer *message ) {
+	dbg_info( "replyToClient" );
 	uv_write_t *reply = calloc( 1, sizeof(*reply) );
 	reply->data = (void*)client;
 
+	uv_buf_t uvMessage = StringBuffer_toUvBuf( message );
+	dbg_info( "buf_t: %.*s", (int)uvMessage.len, uvMessage.base );
+	uv_write( reply, (uv_stream_t*)client->handle, &uvMessage, 1, replyToClientCb );
+}
+
+#define processAnnounce( a ) dbg_info( "announcing" )
+#define processScrape( a ) dbg_info( "scraping" )
+
+static int dispatchClient( clientInfo *client ) {
+	HttpParserInfo *parserInfo = client->parserInfo;
+
 	http_parser_parse_url( parserInfo->urlBuffer->str, parserInfo->urlBuffer->size, 0, parserInfo->url );
 
-	if ( parserInfo->url->field_set & (1 << UF_PATH) )
-		dbg_info( "Path: %.*s", parserInfo->url->field_data[UF_PATH].len, parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_PATH].off );
+	const char *path = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_PATH].off;
+	size_t pathSize  = parserInfo->url->field_data[UF_PATH].len;
+	dbg_info( "Requested path: %.*s", (int)pathSize, path );
+	if ( EqualLiteral( path, "/announce" ) )
+		processAnnounce( client );
+	else if ( EqualLiteral( path, "/scrape" ) )
+		processScrape( client );
+	else {
+		log_warn( "Client made a bad request: %.*s", (int)parserInfo->urlBuffer->size, parserInfo->urlBuffer->str );
+	}
 
-	if ( parserInfo->url->field_set & (1 << UF_QUERY) )
-		dbg_info( "Query: %.*s", parserInfo->url->field_data[UF_QUERY].len, parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_QUERY].off );
+	// This gets leaked, yo.
+	StringBuffer *header = StringBuffer_initWithString( "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi", 0 );
+	replyToClient( client, header );
 
-	uv_buf_t message = uv_buf_init( "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi", 85 );
-	uv_write( reply, (uv_stream_t*)client->handle, &message, 1, replyToClientCb );
 	return 0;
 }
 
@@ -141,6 +167,11 @@ static void readClientRequest( uv_stream_t *clientConnection, ssize_t nread, con
 	// an error occurred, handle appropriately?
 	if ( bytesParsed == 0 && (client->parserInfo->parser->http_errno || client->parserInfo->parser->upgrade) )
 		log_warn( "http_parser_execute has failed." );
+
+	if ( client->parserInfo->httpParserDone ) {
+		uv_read_stop( (uv_stream_t*)client->handle );
+		dispatchClient( client );
+	}
 }
 
 static void newClientConnection( uv_stream_t *server, int status ) {
@@ -150,7 +181,7 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 	}
 	dbg_info( "Connection received." );
 
-	uv_tcp_t *clientConnection = calloc( 1, sizeof *clientConnection );
+	uv_tcp_t *clientConnection = calloc( 1, sizeof(*clientConnection) );
 	uv_tcp_init( server->loop, clientConnection );
 
 	if ( uv_accept( server, (uv_stream_t*)clientConnection ) == 0 ) {
