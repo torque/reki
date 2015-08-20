@@ -3,7 +3,7 @@
 #include <uv.h>
 
 #include "server.h"
-#include "dynamic_string.h"
+#include "StringBuffer.h"
 #include "client.h"
 #include "../http-parser/http_parser.h"
 #include "dbg.h"
@@ -12,7 +12,7 @@ struct _httpParserInfo {
 	http_parser *parser;
 	http_parser_settings *settings;
 	clientInfo *client;
-	dynamic_string *urlBuffer;
+	StringBuffer *urlBuffer;
 	struct http_parser_url *url;
 	bool lastHeaderFieldWasRealIP;
 };
@@ -36,14 +36,14 @@ static httpParserInfo *newParserInfo( void ) {
 	httpParserInfo *parserInfo = calloc( 1, sizeof(*parserInfo) );
 	parserInfo->parser = calloc( 1, sizeof(*parserInfo->parser) );
 	parserInfo->url = calloc( 1, sizeof(*parserInfo->url) );
-	parserInfo->urlBuffer = dynamic_string_init( );
+	parserInfo->urlBuffer = StringBuffer_new( );
 	parserInfo->settings = &settings;
 
 	return parserInfo;
 }
 
 static void freeParserInfo( httpParserInfo *parserInfo ) {
-	dynamic_string_free( parserInfo->urlBuffer );
+	StringBuffer_free( parserInfo->urlBuffer );
 	free( parserInfo->parser );
 	free( parserInfo->url );
 	free( parserInfo );
@@ -70,7 +70,7 @@ static void replyToClientCb( uv_write_t* reply, int status ) {
 static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
 	dbg_info( "httpUrl" );
 	httpParserInfo *parserInfo = parser->data;
-	dynamic_string_append( parserInfo->urlBuffer, at, length );
+	StringBuffer_append( parserInfo->urlBuffer, at, length );
 	return 0;
 }
 

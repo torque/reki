@@ -14,7 +14,6 @@
 
 #include "common.h"
 #include "dbg.h"
-#include "dynamic_string.h"
 #include "server.h"
 #include "../http-parser/http_parser.h"
 

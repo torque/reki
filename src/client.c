@@ -1,7 +1,6 @@
 #include <stdlib.h>
 
 #include "client.h"
-#include "dynamic_string.h"
 #include "dbg.h"
 
 int getClientIp( clientInfo* client ) {
