@@ -157,7 +157,7 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 		clientInfo *client = newClient( );
 		client->handle = clientConnection;
 
-		int ret = getClientIp( client );
+		int ret = getClientIPFromSocket( client );
 		if ( ret ) {
 			log_err( "The peer's IP could not be divined." );
 			uv_close( (uv_handle_t*)clientConnection, NULL );

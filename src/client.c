@@ -3,7 +3,7 @@
 #include "client.h"
 #include "dbg.h"
 
-int getClientIp( clientInfo* client ) {
+int getClientIPFromSocket( clientInfo* client ) {
 	struct sockaddr_storage peerSocket;
 	int ret, namelen = sizeof(peerSocket);
 	ret = uv_tcp_getpeername( client->handle, (struct sockaddr*)&peerSocket, &namelen );

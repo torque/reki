@@ -17,4 +17,4 @@ struct _clientInfo {
 clientInfo *newClient( void );
 void freeClient( clientInfo *client );
 
-int getClientIp( clientInfo* client );
+int getClientIPFromSocket( clientInfo* client );
