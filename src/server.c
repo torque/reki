@@ -8,7 +8,7 @@
 #include "../http-parser/http_parser.h"
 #include "dbg.h"
 
-struct _httpParserInfo {
+struct _HttpParserInfo {
 	http_parser *parser;
 	http_parser_settings *settings;
 	clientInfo *client;
@@ -25,7 +25,7 @@ static int  httpHeadersCompleteCb( http_parser *parser );
 static void replyToClientCb( uv_write_t* reply, int status );
 static int  getAddressInfo( const char *address, const char *port, struct sockaddr_storage *outAddress );
 
-static httpParserInfo *newParserInfo( void ) {
+static HttpParserInfo *newParserInfo( void ) {
 	static http_parser_settings settings = {
 		.on_url = httpUrlCb,
 		.on_header_field = httpHeaderFieldCb,
@@ -33,7 +33,7 @@ static httpParserInfo *newParserInfo( void ) {
 		.on_headers_complete = httpHeadersCompleteCb
 	};
 
-	httpParserInfo *parserInfo = calloc( 1, sizeof(*parserInfo) );
+	HttpParserInfo *parserInfo = calloc( 1, sizeof(*parserInfo) );
 	parserInfo->parser = calloc( 1, sizeof(*parserInfo->parser) );
 	parserInfo->url = calloc( 1, sizeof(*parserInfo->url) );
 	parserInfo->urlBuffer = StringBuffer_new( );
@@ -42,7 +42,7 @@ static httpParserInfo *newParserInfo( void ) {
 	return parserInfo;
 }
 
-static void freeParserInfo( httpParserInfo *parserInfo ) {
+static void freeParserInfo( HttpParserInfo *parserInfo ) {
 	StringBuffer_free( parserInfo->urlBuffer );
 	free( parserInfo->parser );
 	free( parserInfo->url );
@@ -69,7 +69,7 @@ static void replyToClientCb( uv_write_t* reply, int status ) {
 
 static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
 	dbg_info( "httpUrl" );
-	httpParserInfo *parserInfo = parser->data;
+	HttpParserInfo *parserInfo = parser->data;
 	StringBuffer_append( parserInfo->urlBuffer, at, length );
 	return 0;
 }
@@ -77,14 +77,14 @@ static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
 static int httpHeaderFieldCb( http_parser *parser, const char *at, size_t length ) {
 	if ( length > 0 && strncmp( at, "X-Real-IP", length ) == 0 ) {
 		dbg_info( "%.*s", (int)length, at );
-		httpParserInfo *parserInfo = parser->data;
+		HttpParserInfo *parserInfo = parser->data;
 		parserInfo->lastHeaderFieldWasRealIP = true;
 	}
 	return 0;
 }
 
 static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length ) {
-	httpParserInfo *parserInfo = parser->data;
+	HttpParserInfo *parserInfo = parser->data;
 	if ( parserInfo->lastHeaderFieldWasRealIP ) {
 		dbg_info( "%.*s", (int)length, at );
 		parserInfo->lastHeaderFieldWasRealIP = false;
@@ -104,8 +104,8 @@ static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length
 
 static int httpHeadersCompleteCb( http_parser *parser ) {
 	dbg_info( "httpHeadersComplete" );
-	httpParserInfo *parserInfo = parser->data;
 	clientInfo *client = parserInfo->client;
+	HttpParserInfo *parserInfo = parser->data;
 
 	uv_read_stop( (uv_stream_t*)client->handle );
 
@@ -165,7 +165,7 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 			return;
 		}
 
-		httpParserInfo *parserInfo = newParserInfo( );
+		HttpParserInfo *parserInfo = newParserInfo( );
 		// check NULL
 		http_parser_init( parserInfo->parser, HTTP_REQUEST );
 		// add references to our data structures

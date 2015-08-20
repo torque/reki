@@ -10,7 +10,7 @@ typedef struct _clientInfo clientInfo;
 
 struct _clientInfo {
 	uv_tcp_t *handle;
-	httpParserInfo *parserInfo;
+	HttpParserInfo *parserInfo;
 	clientAnnounceData *announce;
 };
 
