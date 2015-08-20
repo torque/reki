@@ -2,20 +2,18 @@
 #include <hiredis/hiredis.h> // hiredis
 #include <hiredis/async.h>
 #include <hiredis/adapters/libuv.h>
-#include <netinet/in.h> // struct sockaddr
 #include <signal.h>     // SIGINT
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <strings.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "common.h"
+#include "macros.h"
 #include "dbg.h"
 #include "server.h"
-#include "../http-parser/http_parser.h"
 
 // static void redisConnectCb( const redisAsyncContext *redis, int status ) {
 // 	if ( status != REDIS_OK ) {
@@ -41,7 +39,6 @@ static void interruptCb( uv_signal_t *interrupt, int signal ) {
 }
 
 int main ( int argc, char **argv ) {
-
 	uv_loop_t *loop = uv_default_loop( );
 	if ( !loop ) {
 		log_err( "uv loop creation failed." );
@@ -55,12 +52,10 @@ int main ( int argc, char **argv ) {
 	// 	return 1;
 	// }
 
-	uv_tcp_t server;
-	int e = createServer( loop, &server );
-	if ( e ) {
-		log_err( "createServer failed." );
-		return 1;
-	}
+	Server *server1 = Server_new( "::", "9001", ServerProtocol_TCP );
+	checkConstructor( server1 );
+	checkFunction( Server_initWithLoop( server1, loop ) );
+	checkFunction( Server_listen( server1 ) );
 
 	uv_signal_t interrupt;
 	// interrupt.data = (void*)redis;

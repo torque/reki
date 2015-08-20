@@ -1,6 +1,6 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <uv.h>
+#include <netinet/in.h> // struct sockaddr
+#include <stdlib.h>  // calloc, malloc, free
+#include <stdbool.h> // bool, true, false;
 
 #include "server.h"
 #include "macros.h"
@@ -232,33 +232,63 @@ static int getAddressInfo( const char *address, const char *port, struct sockadd
 	return 0;
 }
 
-int createServer( uv_loop_t *loop, uv_tcp_t *server ) {
-	int e = uv_tcp_init( loop, server );
-	if ( e ) {
-		log_err( "uv_tcp_init failed: %s", uv_err_name( e ) );
-		return 1;
-	}
+Server *Server_new( const char *bindIP, const char *port, ServerProtocol type ) {
+	Server *newServer = calloc( 1, sizeof(*newServer) );
+	newServer->bindIP = strdup( bindIP );
+	newServer->bindPort = strdup( port );
+	newServer->protocol = type;
+	newServer->handle = calloc( 1, sizeof(*newServer->handle) );
 
+	return newServer;
+}
+
+int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
+	switch ( server->protocol ) {
+		case ServerProtocol_TCP: {
+			server->handle->tcpServer = malloc( sizeof(*server->handle->tcpServer) );
+			checkFunction( uv_tcp_init( loop, server->handle->tcpServer ) );
+			break;
+		}
+		case ServerProtocol_UDP: {
+			server->handle->udpServer = malloc( sizeof(*server->handle->udpServer) );
+			checkFunction( uv_udp_init( loop, server->handle->udpServer ) );
+			break;
+		}
+		default: {
+			log_err( "An unknown server protocol happened." );
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int Server_listen( Server *server ) {
 	struct sockaddr_storage address;
-	e = getAddressInfo( "::", "9001", &address );
-	if ( e ) {
-		log_err( "getAddressInfo failed." );
-		return 1;
+	checkFunction( getAddressInfo( server->bindIP, server->bindPort, &address ) );
+
+	switch ( server->protocol ) {
+		case ServerProtocol_TCP: {
+			checkFunction( uv_tcp_bind( server->handle->tcpServer, (struct sockaddr*)&address, 0 ) );
+			break;
+		}
+		case ServerProtocol_UDP: {
+			checkFunction( uv_udp_bind( server->handle->udpServer, (struct sockaddr*)&address, 0 ) );
+			log_err( "udp actually isn't supported yet." );
+			return 1;
+			// break;
+		}
+		default: {
+			log_err( "An unknown server protocol happened." );
+			return 1;
+		}
 	}
 
-	e = uv_tcp_bind( server, (struct sockaddr*)&address, 0 );
-	if ( e ) {
-		log_err( "uv_tcp_bind failed: %s", uv_err_name( e ) );
-		return 1;
-	}
+	// e = uv_udp_recv_start( server->handle->udpServer, allocCB, readCB );
+	checkFunction( uv_listen( server->handle->stream, 128, newClientConnection ) );
 
-	e = uv_listen( (uv_stream_t*)server, 128, newClientConnection );
-	if ( e ) {
-		log_err( "uv_listen error: %s", uv_err_name( e ) );
-		return 1;
-	}
-
-	dbg_info( "Listening on port %d.", ntohs(((struct sockaddr_in*)&address)->sin_port) );
+	char namebuf[INET6_ADDRSTRLEN];
+	checkFunction( getnameinfo( (struct sockaddr *)&address, address.ss_len, namebuf, sizeof(namebuf), NULL, 0, NI_NUMERICHOST ) );
+	dbg_info( "Listening on [%s]:%d.", namebuf, ntohs(((struct sockaddr_in*)&address)->sin_port) );
 
 	return 0;
 }
