@@ -17,8 +17,8 @@ struct _Server {
 	short ipFamily;
 
 	union _uvServerHandle {
-		uv_tcp_t *tcpServer;
-		uv_udp_t *udpServer;
+		uv_tcp_t *tcpHandle;
+		uv_udp_t *udpHandle;
 		uv_stream_t *stream;
 	} *handle;
 };

@@ -245,13 +245,13 @@ Server *Server_new( const char *bindIP, const char *port, ServerProtocol type ) 
 int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
 	switch ( server->protocol ) {
 		case ServerProtocol_TCP: {
-			server->handle->tcpServer = malloc( sizeof(*server->handle->tcpServer) );
-			checkFunction( uv_tcp_init( loop, server->handle->tcpServer ) );
+			server->handle->tcpHandle = malloc( sizeof(*server->handle->tcpHandle) );
+			checkFunction( uv_tcp_init( loop, server->handle->tcpHandle ) );
 			break;
 		}
 		case ServerProtocol_UDP: {
-			server->handle->udpServer = malloc( sizeof(*server->handle->udpServer) );
-			checkFunction( uv_udp_init( loop, server->handle->udpServer ) );
+			server->handle->udpHandle = malloc( sizeof(*server->handle->udpHandle) );
+			checkFunction( uv_udp_init( loop, server->handle->udpHandle ) );
 			break;
 		}
 		default: {
@@ -273,11 +273,11 @@ int Server_listen( Server *server ) {
 
 	switch ( server->protocol ) {
 		case ServerProtocol_TCP: {
-			checkFunction( uv_tcp_bind( server->handle->tcpServer, (struct sockaddr*)&address, flags ) );
+			checkFunction( uv_tcp_bind( server->handle->tcpHandle, (struct sockaddr*)&address, flags ) );
 			break;
 		}
 		case ServerProtocol_UDP: {
-			checkFunction( uv_udp_bind( server->handle->udpServer, (struct sockaddr*)&address, flags ) );
+			checkFunction( uv_udp_bind( server->handle->udpHandle, (struct sockaddr*)&address, flags ) );
 			log_err( "udp actually isn't supported yet." );
 			return 1;
 			// break;
@@ -288,7 +288,7 @@ int Server_listen( Server *server ) {
 		}
 	}
 
-	// e = uv_udp_recv_start( server->handle->udpServer, allocCB, readCB );
+	// e = uv_udp_recv_start( server->handle->udpHandle, allocCB, readCB );
 	checkFunction( uv_listen( server->handle->stream, 128, newClientConnection ) );
 
 	char namebuf[INET6_ADDRSTRLEN];
