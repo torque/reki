@@ -12,7 +12,7 @@
 struct _HttpParserInfo {
 	http_parser *parser;
 	http_parser_settings *settings;
-	clientInfo *client;
+	ClientConnection *client;
 	StringBuffer *urlBuffer;
 	struct http_parser_url *url;
 	bool lastHeaderFieldWasRealIP;
@@ -24,10 +24,10 @@ static int  httpUrlCb( http_parser *parser, const char *at, size_t length );
 static int  httpHeaderFieldCb( http_parser *parser, const char *at, size_t length );
 static int  httpHeaderValueCb( http_parser *parser, const char *at, size_t length );
 static int  httpHeadersCompleteCb( http_parser *parser );
-static void replyToClientCb( uv_write_t* reply, int status );
+static void replyFinished( uv_write_t* reply, int status );
 static int  getAddressInfo( const char *address, const char *port, struct sockaddr_storage *outAddress );
 
-static HttpParserInfo *newParserInfo( void ) {
+static HttpParserInfo *HttpParserInfo_new( void ) {
 	static http_parser_settings settings = {
 		.on_url = httpUrlCb,
 		.on_header_field = httpHeaderFieldCb,
@@ -44,7 +44,9 @@ static HttpParserInfo *newParserInfo( void ) {
 	return parserInfo;
 }
 
-static void freeParserInfo( HttpParserInfo *parserInfo ) {
+static void HttpParserInfo_free( HttpParserInfo *parserInfo ) {
+	if ( !parserInfo ) return;
+
 	StringBuffer_free( parserInfo->urlBuffer );
 	free( parserInfo->parser );
 	free( parserInfo->url );
@@ -58,15 +60,22 @@ static void uvBufferAllocStaticCb( uv_handle_t *handle, size_t suggested_size, u
 	buf->len = sizeof(base);
 }
 
-static void replyToClientCb( uv_write_t* reply, int status ) {
+static void closeClientConnection( uv_handle_t *handle ) {
+	dbg_info( "final cleanup." );
+	ClientConnection *client = handle->data;
+	free( handle );
+	ClientConnection_free( client );
+}
+
+static void replyFinished( uv_write_t* reply, int status ) {
 	dbg_info( "replyToClient" );
 	if ( status < 0 ) {
 		dbg_info( "Write error: %s", uv_err_name( status ) );
 	}
-	clientInfo *client = reply->data;
-	freeParserInfo( client->parserInfo );
-	freeClient( client );
+	ClientConnection *client = reply->data;
+	HttpParserInfo_free( client->parserInfo );
 	free( reply );
+	uv_close( (uv_handle_t*)client->handle->tcpHandle, closeClientConnection );
 }
 
 static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
@@ -93,7 +102,7 @@ static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length
 		parserInfo->lastHeaderFieldWasRealIP = false;
 		parserInfo->httpParserDone = true;
 
-		clientInfo *client = parserInfo->client;
+		ClientConnection *client = parserInfo->client;
 		// account for null termination.
 		client->announce->peerIp = calloc( length+1, sizeof(*client->announce->peerIp) );
 		memcpy( client->announce->peerIp, at, length );
@@ -115,20 +124,24 @@ static int httpHeadersCompleteCb( http_parser *parser ) {
 	return 0;
 }
 
-void replyToClient( clientInfo *client, StringBuffer *message ) {
+void replyWithError( ClientConnection *client, const char *message ) {
+
+}
+
+void replyToClient( ClientConnection *client, StringBuffer *message ) {
 	dbg_info( "replyToClient" );
 	uv_write_t *reply = calloc( 1, sizeof(*reply) );
 	reply->data = (void*)client;
 
 	uv_buf_t uvMessage = StringBuffer_toUvBuf( message );
 	dbg_info( "buf_t: %.*s", (int)uvMessage.len, uvMessage.base );
-	uv_write( reply, (uv_stream_t*)client->handle, &uvMessage, 1, replyToClientCb );
+	uv_write( reply, client->handle->stream, &uvMessage, 1, replyFinished );
 }
 
 #define processAnnounce( a ) dbg_info( "announcing" )
 #define processScrape( a ) dbg_info( "scraping" )
 
-static int dispatchClient( clientInfo *client ) {
+static int dispatchClient( ClientConnection *client ) {
 	HttpParserInfo *parserInfo = client->parserInfo;
 
 	http_parser_parse_url( parserInfo->urlBuffer->str, parserInfo->urlBuffer->size, 0, parserInfo->url );
@@ -152,13 +165,13 @@ static int dispatchClient( clientInfo *client ) {
 }
 
 static void readClientRequest( uv_stream_t *clientConnection, ssize_t nread, const uv_buf_t *buf ) {
-	clientInfo *client = clientConnection->data;
+	ClientConnection *client = clientConnection->data;
 	if ( nread < 0 ) {
 		dbg_info( "Read error %zd: %s", nread, uv_err_name( nread ) );
-		uv_close( (uv_handle_t*)clientConnection, NULL );
-		// FREE PARSERINFO AND CLIENTINFO
-		freeParserInfo( client->parserInfo );
-		freeClient( client );
+		// FREE PARSERINFO
+		HttpParserInfo_free( client->parserInfo );
+		// connection and handle are freed.
+		uv_close( (uv_handle_t*)clientConnection, closeClientConnection );
 		return;
 	}
 
@@ -169,7 +182,7 @@ static void readClientRequest( uv_stream_t *clientConnection, ssize_t nread, con
 		log_warn( "http_parser_execute has failed." );
 
 	if ( client->parserInfo->httpParserDone ) {
-		uv_read_stop( (uv_stream_t*)client->handle );
+		uv_read_stop( client->handle->stream );
 		dispatchClient( client );
 	}
 }
@@ -185,28 +198,28 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 	uv_tcp_init( server->loop, clientConnection );
 
 	if ( uv_accept( server, (uv_stream_t*)clientConnection ) == 0 ) {
-		clientInfo *client = newClient( );
-		client->handle = clientConnection;
+		ClientConnection *client = ClientConnection_new( );
+		client->handle->tcpHandle = clientConnection;
+		clientConnection->data = (void*)client;
 
-		int ret = getClientIPFromSocket( client );
+		int ret = ClientConnection_getIPFromSocket( client );
 		if ( ret ) {
 			log_err( "The peer's IP could not be divined." );
-			uv_close( (uv_handle_t*)clientConnection, NULL );
-			freeClient( client );
+			// callback frees clientConnection and client
+			uv_close( (uv_handle_t*)clientConnection, closeClientConnection );
 			return;
 		}
 
-		HttpParserInfo *parserInfo = newParserInfo( );
-		// check NULL
+		HttpParserInfo *parserInfo = HttpParserInfo_new( );
+		// check alloc
 		http_parser_init( parserInfo->parser, HTTP_REQUEST );
-		// add references to our data structures
+
 		parserInfo->parser->data = (void*)parserInfo;
 		parserInfo->client = client;
 		client->parserInfo = parserInfo;
-		clientConnection->data = (void*)client;
-		uv_read_start( (uv_stream_t*)clientConnection, uvBufferAllocStaticCb, readClientRequest );
+		uv_read_start( client->handle->stream, uvBufferAllocStaticCb, readClientRequest );
 	} else {
-		uv_close( (uv_handle_t*)clientConnection, NULL );
+		uv_close( (uv_handle_t*)clientConnection, closeClientConnection );
 	}
 }
 
@@ -259,6 +272,8 @@ int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
 			return 1;
 		}
 	}
+
+	server->handle->stream->data = server;
 	return 0;
 }
 

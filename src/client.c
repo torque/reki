@@ -3,10 +3,27 @@
 #include "client.h"
 #include "dbg.h"
 
-int getClientIPFromSocket( clientInfo* client ) {
+ClientConnection *ClientConnection_new( void ) {
+	ClientConnection *client = calloc( 1, sizeof(*client) );
+	client->handle = calloc( 1, sizeof(*client->handle) );
+	client->announce = calloc( 1, sizeof(*client->announce) );
+
+	return client;
+}
+
+void ClientConnection_free( ClientConnection *client ) {
+	if ( !client )
+		return;
+
+	free( client->announce );
+	free( client->handle );
+	free( client );
+}
+
+int ClientConnection_getIPFromSocket( ClientConnection* client ) {
 	struct sockaddr_storage peerSocket;
 	int ret, namelen = sizeof(peerSocket);
-	ret = uv_tcp_getpeername( client->handle, (struct sockaddr*)&peerSocket, &namelen );
+	ret = uv_tcp_getpeername( client->handle->tcpHandle, (struct sockaddr*)&peerSocket, &namelen );
 	if ( ret ) {
 		log_err( "Getpeername error: %s", uv_err_name( ret ) );
 		return 1;
@@ -22,16 +39,4 @@ int getClientIPFromSocket( clientInfo* client ) {
 
 	dbg_info( "Connection from: %s", ip );
 	return 0;
-}
-
-clientInfo *newClient( void ) {
-	clientInfo *client = calloc( 1, sizeof(*client) );
-	client->announce = calloc( 1, sizeof(*client->announce) );
-
-	return client;
-}
-
-void freeClient( clientInfo *client ) {
-	free( client->announce );
-	free( client );
 }

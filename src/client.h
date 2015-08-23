@@ -6,15 +6,16 @@
 #include "common.h"
 #include "server.h"
 
-typedef struct _clientInfo clientInfo;
+typedef struct _ClientConnection ClientConnection;
 
-struct _clientInfo {
-	uv_tcp_t *handle;
+struct _ClientConnection {
+	ServerHandle *handle;
+	Server *server;
 	HttpParserInfo *parserInfo;
 	clientAnnounceData *announce;
 };
 
-clientInfo *newClient( void );
-void freeClient( clientInfo *client );
+ClientConnection *ClientConnection_new( void );
+void ClientConnection_free( ClientConnection *client );
 
-int getClientIPFromSocket( clientInfo* client );
+int ClientConnection_getIPFromSocket( ClientConnection* client );
