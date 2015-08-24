@@ -11,7 +11,7 @@ DEPS    := $(OBJDIR)/lib/libhiredis.a $(OBJDIR)/lib/libuv.a
 SOURCES := $(foreach dir, $(SRCDIRS), $(wildcard $(dir)/*.c)) http-parser/http_parser.c
 OBJECTS := $(addprefix $(OBJDIR)/, $(SOURCES:.c=.o))
 
-.PHONY: all debug hiredis libuv clean
+.PHONY: all debug hiredis libuv clean-all clean clean-deps
 
 all: debug
 
@@ -37,7 +37,7 @@ $(OBJDIR):
 	@printf "\e[1;33mMKDIR\e[m $@\n"
 	@mkdir -p $@
 
-$(OBJDIR)/%/: $(OBJDIR)
+$(OBJDIR)/%/: | $(OBJDIR)
 	@printf "\e[1;33mMKDIR\e[m $@\n"
 	@mkdir -p $@
 
@@ -54,12 +54,20 @@ deps/libuv/configure:
 	@printf "\e[1;36m  GEN\e[m $@\n"
 	@deps/libuv/autogen.sh >/dev/null 2>&1
 
-clean:
+clean-all: clean clean-deps
 	@printf "\e[1;31m   RM\e[m $(OBJDIR)\n"
 	@rm -rf $(OBJDIR)
+
+clean:
+	@printf "\e[1;31m   RM\e[m $(OBJDIR)/src\n"
+	@rm -rf $(OBJDIR)/src
+	@printf "\e[1;31m   RM\e[m $(OBJDIR)/http-parser\n"
+	@rm -rf $(OBJDIR)/http-parser
+	@printf "\e[1;31m   RM\e[m $(TARGET)\n"
+	@rm -f $(TARGET)
+
+clean-deps:
 	@printf "\e[1;31mCLEAN\e[m deps/libuv\n"
 	@cd deps/libuv && git clean -fdx >/dev/null
 	@printf "\e[1;31mCLEAN\e[m deps/hiredis\n"
 	@cd deps/hiredis && git clean -fdx >/dev/null
-	@printf "\e[1;31m   RM\e[m $(TARGET)\n"
-	@rm -f $(TARGET)
