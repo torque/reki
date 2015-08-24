@@ -104,13 +104,13 @@ static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length
 
 		ClientConnection *client = parserInfo->client;
 		// account for null termination.
-		client->announce->peerIp = calloc( length+1, sizeof(*client->announce->peerIp) );
-		memcpy( client->announce->peerIp, at, length );
-		client->announce->peerIp = (char*)at;
+		client->announce->ip = calloc( length+1, sizeof(*client->announce->ip) );
+		memcpy( client->announce->ip, at, length );
+		client->announce->ip = (char*)at;
 
 		struct sockaddr_storage clientSocket;
-		getAddressInfo( client->announce->peerIp, NULL, &clientSocket );
-		client->announce->ipType = clientSocket.ss_family;
+		getAddressInfo( client->announce->ip, NULL, &clientSocket );
+		client->announce->IPType = clientSocket.ss_family;
 	}
 	return 0;
 }
@@ -138,21 +138,26 @@ void replyToClient( ClientConnection *client, StringBuffer *message ) {
 	uv_write( reply, client->handle->stream, &uvMessage, 1, replyFinished );
 }
 
-#define processAnnounce( a ) dbg_info( "announcing" )
-#define processScrape( a ) dbg_info( "scraping" )
+#define processScrape( a, b ) dbg_info( "scraping" )
 
 static int dispatchClient( ClientConnection *client ) {
 	HttpParserInfo *parserInfo = client->parserInfo;
 
 	http_parser_parse_url( parserInfo->urlBuffer->str, parserInfo->urlBuffer->size, 0, parserInfo->url );
 
-	const char *path = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_PATH].off;
-	size_t pathSize  = parserInfo->url->field_data[UF_PATH].len;
+	const char *path  = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_PATH].off;
+	size_t pathSize   = parserInfo->url->field_data[UF_PATH].len;
+	const char *query = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_QUERY].off;
+	size_t querySize  = parserInfo->url->field_data[UF_QUERY].len;
 	dbg_info( "Requested path: %.*s", (int)pathSize, path );
-	if ( EqualLiteral( path, "/announce" ) )
-		processAnnounce( client );
-	else if ( EqualLiteral( path, "/scrape" ) )
-		processScrape( client );
+	dbg_info( "Request query: %.*s", (int)querySize, query );
+	if ( EqualLiteral( path, "/announce" ) ) {
+		if ( ClientAnnounceData_parseURLQuery( client->announce, query, querySize ) )
+			log_warn( "%s", client->announce->errorMessage );
+		else
+			dbg_info( "There was no error parsing the announce." );
+	} else if ( EqualLiteral( path, "/scrape" ) )
+		processScrape( query, querySize );
 	else {
 		log_warn( "Client made a bad request: %.*s", (int)parserInfo->urlBuffer->size, parserInfo->urlBuffer->str );
 	}
