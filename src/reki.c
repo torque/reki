@@ -10,7 +10,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "common.h"
 #include "macros.h"
 #include "dbg.h"
 #include "server.h"
