@@ -1,3 +1,4 @@
+#include <ctype.h> // tolower
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -7,20 +8,15 @@
 #include "dbg.h"
 #include "macros.h"
 
-const static char *AnnounceErrorStrings[] = {
-	"There was no error.",
-	"The request was malformed.",
-	"The request was invalid (missing a field).",
-	"The request was invalid (a field was malformed).",
-	"The requested torrent does not exist."
-};
-
-ClientAnnounceData *ClientAnnounceData_new( void ) {
-	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
-	announce->numwant = 50;
-	announce->compact = true;
-	announce->event   = AnnounceEvent_none;
-	return announce;
+const char *AnnounceErrorMessage( AnnounceError error ) {
+	const static char *AnnounceErrorStrings[] = {
+		"There was no error.",
+		"The request was malformed.",
+		"The request was invalid (missing a field).",
+		"The request was invalid (a field was malformed).",
+		"The requested torrent does not exist."
+	};
+	return AnnounceErrorStrings[error];
 }
 
 int decodeURLString( const char *input, size_t length, char **output ) {
@@ -43,6 +39,33 @@ int decodeURLString( const char *input, size_t length, char **output ) {
 	}
 	(*output)[o] = '\0';
 	return 0;
+}
+
+int decodeInfoHash( const char *input, size_t length, char **output ) {
+	// kind of janky to hardcode the length. note: since snprintf null
+	// terminates, output has to be an extra character in width to avoid
+	// an OOB write.
+	int o = 0;
+	*output = malloc( 41*sizeof(**output) );
+	for ( int i = 0; (i < length) && (o < 40); i++, o++ ) {
+		if ( input[i] == '%' ) {
+			if ( i + 2 > length )
+				return 1;
+			(*output)[o++] = tolower( input[++i] );
+			(*output)[o]   = tolower( input[++i] );
+		} else
+			snprintf( (*output) + o++, 3, "%02x", input[i] );
+	}
+	(*output)[o] = '\0';
+	return 0;
+}
+
+ClientAnnounceData *ClientAnnounceData_new( void ) {
+	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
+	announce->numwant = 50;
+	announce->compact = true;
+	announce->event   = AnnounceEvent_none;
+	return announce;
 }
 
 void ClientAnnounceData_free( ClientAnnounceData *announce ) {
@@ -89,10 +112,12 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 			dbg_info( "peer_id: %.*s", (int)valueLength, value );
 			CheckError( decodeURLString( value, valueLength, &announce->id ), errorCode = AnnounceError_malformedField );
 			seenFields |= SeenFieldOffset_peerID;
+
 		} else if ( !(seenFields & SeenFieldOffset_infoHash) && EqualLiteralLength( key, keyLength, "info_hash" ) ) {
-			CheckError( decodeURLString( value, valueLength, &announce->infoHash ), errorCode = AnnounceError_malformedField );
-			dbg_info( "info_hash: %.*s", 20, announce->infoHash );
+			CheckError( decodeInfoHash( value, valueLength, &announce->infoHash ), errorCode = AnnounceError_malformedField );
+			dbg_info( "info_hash: %.*s", 40, announce->infoHash );
 			seenFields |= SeenFieldOffset_infoHash;
+
 		// The IP value in the request can allegedly be a DNS name,
 		// according to BEP3[1]. I don't know if any clients do this, but
 		// it's not currently supported.
@@ -132,6 +157,6 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 	return AnnounceError_okay;
 
 error:
-	announce->errorMessage = AnnounceErrorStrings[errorCode];
+	announce->errorMessage = AnnounceErrorMessage( errorCode );
 	return errorCode;
 }

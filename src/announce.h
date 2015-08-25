@@ -43,6 +43,7 @@ struct _ClientAnnounceData {
 	const char *errorMessage;
 };
 
+const char *AnnounceErrorMessage( AnnounceError error );
 ClientAnnounceData *ClientAnnounceData_new( void );
 void ClientAnnounceData_free( ClientAnnounceData *announce );
 AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, const char *query, size_t querySize );
