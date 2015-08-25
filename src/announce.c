@@ -25,19 +25,23 @@ ClientAnnounceData *ClientAnnounceData_new( void ) {
 
 int decodeURLString( const char *input, size_t length, char **output ) {
 	// output is guaranteed to be the same size as the input or smaller.
-	*output = malloc( length*sizeof(**output) );
-	for ( int i = 0, o = 0; (i < length) && (o < length); i++, o++ ) {
+	int o = 0;
+	*output = malloc( (length + 1)*sizeof(**output) );
+	for ( int i = 0; (i < length) && (o < length); i++, o++ ) {
 		if ( input[i] == '%' ) {
-			char encodedChar[3] = { input[i+1], input[i+2], '\0' };
+			if ( i + 2 > length )
+				return 1;
+			char encodedChar[3] = { input[i + 1], input[i + 2], '\0' };
 			long decodedChar = strtol( encodedChar, NULL, 16 );
 			if ( decodedChar < UCHAR_MAX )
 				(*output)[o] = (char)decodedChar;
 			else
 				return 1;
-			input += 2;
+			i += 2;
 		} else
 			(*output)[o] = input[i];
 	}
+	(*output)[o] = '\0';
 	return 0;
 }
 
