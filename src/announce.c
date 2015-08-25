@@ -58,11 +58,10 @@ enum _SeenFieldOffsets {
 	SeenFieldOffset_port      = 1 << 2,
 	SeenFieldOffset_event     = 1 << 3,
 	SeenFieldOffset_IP        = 1 << 4,
-	SeenFieldOffset_compact   = 1 << 5,
-	SeenFieldOffset_IPv4      = 1 << 6,
-	SeenFieldOffset_IPv6      = 1 << 7,
-	SeenFieldOffset_required  = SeenFieldOffset_peerID | SeenFieldOffset_infoHash | SeenFieldOffset_port,
-	SeenFieldOffset_important = SeenFieldOffset_required | SeenFieldOffset_IP,
+	SeenFieldOffset_IPv4      = 1 << 5,
+	SeenFieldOffset_IPv6      = 1 << 6,
+	SeenFieldOffset_left      = 1 << 7,
+	SeenFieldOffset_required  = SeenFieldOffset_peerID | SeenFieldOffset_infoHash | SeenFieldOffset_port | SeenFieldOffset_left,
 };
 
 #define CheckError( boolean, setError ) if ( boolean ) { setError; goto error; }
@@ -85,7 +84,7 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 
 		ptrdiff_t keyLength = value - key - 1, valueLength = query - value + i;
 		dbg_info( "key: %.*s; value: %.*s", (int)keyLength, key, (int)valueLength, value );
-		// compare keys to get values.
+		// Compare keys to get values. This is not particularly elegant.
 		if ( !(seenFields & SeenFieldOffset_peerID) && EqualLiteralLength( key, keyLength, "peer_id" ) ) {
 			dbg_info( "peer_id: %.*s", (int)valueLength, value );
 			CheckError( decodeURLString( value, valueLength, &announce->id ), errorCode = AnnounceError_malformedField );
@@ -100,7 +99,6 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
 		} else if ( !(seenFields & SeenFieldOffset_IP) && EqualLiteralLength( key, keyLength, "ip" ) ) {
 			dbg_info( "IP: %.*s", (int)valueLength, value );
-
 			seenFields |= SeenFieldOffset_IP;
 
 		// Optional fields according to BEP7[1], I don't know if clients
@@ -108,32 +106,29 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		// [1]: http://bittorrent.org/beps/bep_0007.html#announce-parameter
 		} else if ( !(seenFields & SeenFieldOffset_IPv4) && EqualLiteralLength( key, keyLength, "ipv4" ) ) {
 			dbg_info( "IPv4: %.*s", (int)valueLength, value);
+			seenFields |= SeenFieldOffset_IPv4;
 
 		} else if ( !(seenFields & SeenFieldOffset_IPv6) && EqualLiteralLength( key, keyLength, "ipv6" ) ) {
 			dbg_info( "IPv6: %.*s", (int)valueLength, value);
+			seenFields |= SeenFieldOffset_IPv6;
 
 		} else if ( !(seenFields & SeenFieldOffset_port) && EqualLiteralLength( key, keyLength, "port" ) ) {
 			dbg_info( "port: %.*s", (int)valueLength, value );
 			announce->port = strtoul( value, NULL, 10 );
 			seenFields |= SeenFieldOffset_port;
 
-		} else if ( !(seenFields & SeenFieldOffset_compact) && EqualLiteralLength( key, keyLength, "compact" ) ) {
-			dbg_info( "compact: %.*s", (int)valueLength, value );
-			if ( value[0] == '0' )
-				announce->compact = false;
-			seenFields |= SeenFieldOffset_compact;
+		} else if ( !(seenFields & SeenFieldOffset_left) && EqualLiteralLength( key, keyLength, "left" ) ) {
+			dbg_info( "left: %.*s", (int)valueLength, value );
+			announce->left = strtoull( value, NULL, 10 );
+			seenFields |= SeenFieldOffset_left;
 
 		}
-
-		// This shortcut will have to go if statistics ever get added and we
-		// want all fields.
-		if ( (seenFields & SeenFieldOffset_important) == SeenFieldOffset_important )
-			goto announce;
 	}
+	// According to BEP23, not supporting non-compact responses is
+	// allowed: http://bittorrent.org/beps/bep_0023.html
 
 	CheckError( (seenFields & SeenFieldOffset_required) != SeenFieldOffset_required, errorCode = AnnounceError_missingField );
 
-announce:
 	return AnnounceError_okay;
 
 error:
