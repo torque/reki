@@ -7,6 +7,7 @@
 typedef struct _ClientConnection ClientConnection;
 
 #include "server.h"
+#include "RequestParser.h"
 #include "announce.h"
 
 

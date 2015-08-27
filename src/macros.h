@@ -5,3 +5,4 @@
 #define checkFunction( function ) if ( function ) { log_err( #function " failed." ); return 1; }
 
 #define EqualLiteral( in, lit ) (strncmp( in, lit, strlen( lit ) ) == 0)
+#define EqualLiteralLength( in, inlen, lit ) ((strlen(lit) == inlen) && EqualLiteral( in, lit ))

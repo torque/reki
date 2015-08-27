@@ -1,7 +1,6 @@
 #pragma once
 #include <uv.h>
 
-typedef struct _HttpParserInfo HttpParserInfo;
 typedef struct _Server Server;
 typedef union _uvServerHandle ServerHandle;
 typedef enum _ServerProtocol ServerProtocol;

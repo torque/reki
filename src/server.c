@@ -6,52 +6,9 @@
 #include "macros.h"
 #include "StringBuffer.h"
 #include "client.h"
+#include "RequestParser.h"
 #include "../http-parser/http_parser.h"
 #include "dbg.h"
-
-struct _HttpParserInfo {
-	http_parser *parser;
-	http_parser_settings *settings;
-	ClientConnection *client;
-	StringBuffer *urlBuffer;
-	struct http_parser_url *url;
-	bool lastHeaderFieldWasRealIP;
-	bool httpParserDone;
-};
-
-static void uvBufferAllocStaticCb( uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf );
-static int  httpUrlCb( http_parser *parser, const char *at, size_t length );
-static int  httpHeaderFieldCb( http_parser *parser, const char *at, size_t length );
-static int  httpHeaderValueCb( http_parser *parser, const char *at, size_t length );
-static int  httpHeadersCompleteCb( http_parser *parser );
-static void replyFinished( uv_write_t* reply, int status );
-static int  getAddressInfo( const char *address, const char *port, struct sockaddr_storage *outAddress );
-
-static HttpParserInfo *HttpParserInfo_new( void ) {
-	static http_parser_settings settings = {
-		.on_url = httpUrlCb,
-		.on_header_field = httpHeaderFieldCb,
-		.on_header_value = httpHeaderValueCb,
-		.on_headers_complete = httpHeadersCompleteCb
-	};
-
-	HttpParserInfo *parserInfo = calloc( 1, sizeof(*parserInfo) );
-	parserInfo->parser = calloc( 1, sizeof(*parserInfo->parser) );
-	parserInfo->url = calloc( 1, sizeof(*parserInfo->url) );
-	parserInfo->urlBuffer = StringBuffer_new( );
-	parserInfo->settings = &settings;
-
-	return parserInfo;
-}
-
-static void HttpParserInfo_free( HttpParserInfo *parserInfo ) {
-	if ( !parserInfo ) return;
-
-	StringBuffer_free( parserInfo->urlBuffer );
-	free( parserInfo->parser );
-	free( parserInfo->url );
-	free( parserInfo );
-}
 
 // Do this unless evidence occurs that it is a horrible idea.
 static void uvBufferAllocStaticCb( uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf ) {
@@ -78,52 +35,6 @@ static void replyFinished( uv_write_t* reply, int status ) {
 	uv_close( (uv_handle_t*)client->handle->tcpHandle, closeClientConnection );
 }
 
-static int httpUrlCb( http_parser *parser, const char *at, size_t length ) {
-	dbg_info( "httpUrl" );
-	HttpParserInfo *parserInfo = parser->data;
-	StringBuffer_append( parserInfo->urlBuffer, at, length );
-	return 0;
-}
-
-static int httpHeaderFieldCb( http_parser *parser, const char *at, size_t length ) {
-	if ( length > 0 && strncmp( at, "X-Real-IP", length ) == 0 ) {
-		dbg_info( "%.*s", (int)length, at );
-		HttpParserInfo *parserInfo = parser->data;
-		parserInfo->lastHeaderFieldWasRealIP = true;
-	}
-	return 0;
-}
-
-static int httpHeaderValueCb( http_parser *parser, const char *at, size_t length ) {
-	dbg_info( "httpHeaderValueCb" );
-	HttpParserInfo *parserInfo = parser->data;
-	if ( parserInfo->lastHeaderFieldWasRealIP ) {
-		dbg_info( "%.*s", (int)length, at );
-		parserInfo->lastHeaderFieldWasRealIP = false;
-		parserInfo->httpParserDone = true;
-
-		ClientConnection *client = parserInfo->client;
-		// account for null termination.
-		client->announce->ip = calloc( length+1, sizeof(*client->announce->ip) );
-		memcpy( client->announce->ip, at, length );
-		client->announce->ip = (char*)at;
-
-		struct sockaddr_storage clientSocket;
-		getAddressInfo( client->announce->ip, NULL, &clientSocket );
-		client->announce->IPType = clientSocket.ss_family;
-	}
-	return 0;
-}
-
-static int httpHeadersCompleteCb( http_parser *parser ) {
-	dbg_info( "httpHeadersComplete" );
-	HttpParserInfo *parserInfo = parser->data;
-	if ( !parserInfo->httpParserDone )
-		parserInfo->httpParserDone = true;
-
-	return 0;
-}
-
 void replyWithError( ClientConnection *client, const char *message ) {
 
 }
@@ -143,12 +54,12 @@ void replyToClient( ClientConnection *client, StringBuffer *message ) {
 static int dispatchClient( ClientConnection *client ) {
 	HttpParserInfo *parserInfo = client->parserInfo;
 
-	http_parser_parse_url( parserInfo->urlBuffer->str, parserInfo->urlBuffer->size, 0, parserInfo->url );
+	http_parser_parse_url( parserInfo->URLString, parserInfo->URLStringLength, 0, parserInfo->parsedURL );
 
-	const char *path  = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_PATH].off;
-	size_t pathSize   = parserInfo->url->field_data[UF_PATH].len;
-	const char *query = parserInfo->urlBuffer->str + parserInfo->url->field_data[UF_QUERY].off;
-	size_t querySize  = parserInfo->url->field_data[UF_QUERY].len;
+	const char *path  = parserInfo->URLString + parserInfo->parsedURL->field_data[UF_PATH].off;
+	size_t pathSize   = parserInfo->parsedURL->field_data[UF_PATH].len;
+	const char *query = parserInfo->URLString + parserInfo->parsedURL->field_data[UF_QUERY].off;
+	size_t querySize  = parserInfo->parsedURL->field_data[UF_QUERY].len;
 	dbg_info( "Requested path: %.*s", (int)pathSize, path );
 	dbg_info( "Request query: %.*s", (int)querySize, query );
 	if ( EqualLiteral( path, "/announce" ) ) {
@@ -158,9 +69,9 @@ static int dispatchClient( ClientConnection *client ) {
 			dbg_info( "There was no error parsing the announce." );
 	} else if ( EqualLiteral( path, "/scrape" ) )
 		processScrape( query, querySize );
-	else {
-		log_warn( "Client made a bad request: %.*s", (int)parserInfo->urlBuffer->size, parserInfo->urlBuffer->str );
-	}
+
+	else
+		log_warn( "Client made a bad request: %.*s", (int)parserInfo->URLStringLength, parserInfo->URLString );
 
 	// This gets leaked, yo.
 	StringBuffer *header = StringBuffer_initWithString( "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length: 2\r\n\r\nHi", 0 );
@@ -216,10 +127,7 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 		}
 
 		HttpParserInfo *parserInfo = HttpParserInfo_new( );
-		// check alloc
-		http_parser_init( parserInfo->parser, HTTP_REQUEST );
 
-		parserInfo->parser->data = (void*)parserInfo;
 		parserInfo->client = client;
 		client->parserInfo = parserInfo;
 		uv_read_start( client->handle->stream, uvBufferAllocStaticCb, readClientRequest );
@@ -236,15 +144,13 @@ static int getAddressInfo( const char *address, const char *port, struct sockadd
 	// defined as 0, so this isn't even technically necessary.
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_flags = AI_NUMERICHOST;
+
 	int e = getaddrinfo( address, port, &hints, &res );
 	if (e) {
 		log_err("getaddrinfo failed: %s", gai_strerror(e));
 		return 1;
 	} else {
-		if ( res && res->ai_addrlen )
-			memcpy( outAddress, res->ai_addr, res->ai_addrlen );
-		else
-			return 1;
+		memcpy( outAddress, res->ai_addr, res->ai_addrlen );
 		freeaddrinfo( res );
 	}
 	return 0;
