@@ -1,12 +1,14 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <uv.h>
+
+typedef struct _ClientConnection ClientConnection;
 
 #include "server.h"
 #include "announce.h"
 
-typedef struct _ClientConnection ClientConnection;
 
 struct _ClientConnection {
 	ServerHandle *handle;

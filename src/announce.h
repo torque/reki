@@ -2,11 +2,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../http-parser/http_parser.h"
 
 typedef struct _ClientAnnounceData ClientAnnounceData;
 typedef enum   _AnnounceEvent AnnounceEvent;
 typedef enum   _AnnounceError AnnounceError;
+
+#include "../http-parser/http_parser.h"
 
 enum _AnnounceError {
 	AnnounceError_okay,
