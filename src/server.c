@@ -10,11 +10,13 @@
 #include "../http-parser/http_parser.h"
 #include "dbg.h"
 
-// Do this unless evidence occurs that it is a horrible idea.
-static void uvBufferAllocStaticCb( uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf ) {
-	static char base[1024];
-	buf->base = base;
-	buf->len = sizeof(base);
+// This buffer can be freed in the read callback.
+static void uvReadBufferAlloc( uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf ) {
+	ClientConnection *client = handle->data;
+	// append to the readbuffer.
+	buf->base = client->readBuffer->str + client->readBuffer->size;
+	// make sure the buffer has a length of at least one.
+	buf->len = StringBuffer_ensureFreeSize( client->readBuffer, 1 );
 }
 
 static void closeClientConnection( uv_handle_t *handle ) {
@@ -130,7 +132,7 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 
 		parserInfo->client = client;
 		client->parserInfo = parserInfo;
-		uv_read_start( client->handle->stream, uvBufferAllocStaticCb, readClientRequest );
+		uv_read_start( client->handle->stream, uvReadBufferAlloc, readClientRequest );
 	} else {
 		uv_close( (uv_handle_t*)clientConnection, closeClientConnection );
 	}

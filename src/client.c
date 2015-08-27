@@ -5,9 +5,10 @@
 #include "dbg.h"
 
 ClientConnection *ClientConnection_new( void ) {
-	ClientConnection *client = calloc( 1, sizeof(*client) );
-	client->handle = calloc( 1, sizeof(*client->handle) );
-	client->announce = ClientAnnounceData_new( );
+	ClientConnection *client = malloc( sizeof(*client) );
+	client->handle = malloc( sizeof(*client->handle) );
+	client->readBuffer = StringBuffer_new( );
+	client->writeBuffer = StringBuffer_new( );
 	memset( client->compactAddress, 0, AddressOffset_Size );
 	memcpy( client->compactAddress + AddressOffset_IPv4Bencode,  "6:", 2 );
 	memcpy( client->compactAddress + AddressOffset_IPv6Bencode, "18:", 3 );
@@ -20,6 +21,8 @@ void ClientConnection_free( ClientConnection *client ) {
 		return;
 
 	ClientAnnounceData_free( client->announce );
+	StringBuffer_free( client->readBuffer  );
+	StringBuffer_free( client->writeBuffer );
 	free( client->handle );
 	free( client );
 }

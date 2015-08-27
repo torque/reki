@@ -26,6 +26,8 @@ struct _ClientConnection {
 	Server *server;
 	HttpParserInfo *parserInfo;
 	ClientAnnounceData *announce;
+	StringBuffer *readBuffer;
+	StringBuffer *writeBuffer;
 
 	// 6 bytes for ipv4 + port, 18 bytes for ipv6+port, 1 byte for
 	// signaling which address(es) are stored. All network byte order.
