@@ -12,7 +12,10 @@ struct _StringBuffer {
 
 StringBuffer *StringBuffer_new( void );
 StringBuffer *StringBuffer_initWithString( const char *src, size_t size );
-void StringBuffer_free( StringBuffer *str );
-void StringBuffer_append( StringBuffer *str, const char *append, size_t size );
-void StringBuffer_joinBufs( StringBuffer *joinee, StringBuffer *joiner );
-uv_buf_t StringBuffer_toUvBuf( StringBuffer *src );
+void StringBuffer_free( StringBuffer *buf );
+void StringBuffer_append( StringBuffer *buf, const char *append, size_t size );
+void StringBuffer_join( StringBuffer *joinee, StringBuffer *joiner );
+size_t StringBuffer_ensureFreeSize( StringBuffer *buf, size_t size );
+void StringBuffer_sprintf( StringBuffer *buf, const char *format, ... );
+void StringBuffer_safeSprintf( StringBuffer *buf, const char *format, ... );
+uv_buf_t StringBuffer_toUvBuf( StringBuffer *buf );
