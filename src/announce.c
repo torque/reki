@@ -62,8 +62,7 @@ int decodeInfoHash( const char *input, size_t length, char **output ) {
 
 ClientAnnounceData *ClientAnnounceData_new( void ) {
 	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
-	announce->numwant = 50;
-	announce->compact = true;
+	announce->numwant = 20;
 	announce->event   = AnnounceEvent_none;
 	return announce;
 }
