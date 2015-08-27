@@ -31,8 +31,9 @@ struct _ClientAnnounceData {
 	uint8_t  numwant;
 	// Currently unused.
 	uint64_t uploaded, downloaded, left;
+	// score to sort by in the ordered set.
+	uint64_t score;
 
-	bool compact;
 	enum _AnnounceEvent {
 		AnnounceEvent_none,
 		AnnounceEvent_start,
