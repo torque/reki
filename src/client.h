@@ -5,10 +5,16 @@
 #include <uv.h>
 
 typedef struct _ClientConnection ClientConnection;
+typedef union _ClientRequestData ClientRequestData;
+typedef enum  _ClientRequestType ClientRequestType;
 
 #include "server.h"
 #include "RequestParser.h"
 #include "announce.h"
+
+typedef struct {
+	int pad;
+} ClientScrapeData;
 
 enum _CompactAddressOffsets {
 	AddressOffset_Metadata    =  0,
@@ -25,7 +31,6 @@ struct _ClientConnection {
 	ServerHandle *handle;
 	Server *server;
 	HttpParserInfo *parserInfo;
-	ClientAnnounceData *announce;
 	StringBuffer *readBuffer;
 	StringBuffer *writeBuffer;
 
@@ -41,6 +46,20 @@ struct _ClientConnection {
 	// 12: 16-byte ipv6 address.
 	// 28:  2-byte ipv6 port.
 	char compactAddress[AddressOffset_Size];
+
+	union _ClientRequestData {
+		ClientAnnounceData *announce;
+		ClientScrapeData *scrape;
+	} *request;
+
+	enum _ClientRequestType {
+		ClientRequest_announce,
+		ClientRequest_scrape,
+	} requestType;
+
+#if defined(CLIENTTIMEINFO)
+	uint64_t startTime;
+#endif
 };
 
 ClientConnection *ClientConnection_new( void );

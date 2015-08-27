@@ -64,12 +64,18 @@ static int dispatchClient( ClientConnection *client ) {
 	size_t querySize  = parserInfo->parsedURL->field_data[UF_QUERY].len;
 	dbg_info( "Requested path: %.*s", (int)pathSize, path );
 	dbg_info( "Request query: %.*s", (int)querySize, query );
-	if ( EqualLiteral( path, "/announce" ) ) {
-		if ( ClientAnnounceData_parseURLQuery( client->announce, query, querySize ) )
-			log_warn( "%s", client->announce->errorMessage );
-		else
+	if ( EqualLiteralLength( path, pathSize, "/announce" ) ) {
+		ClientAnnounceData *announce = ClientAnnounceData_new( );
+		if ( ClientAnnounceData_parseURLQuery( announce, query, querySize ) )
+			log_warn( "%s", announce->errorMessage );
+		else {
 			dbg_info( "There was no error parsing the announce." );
-	} else if ( EqualLiteral( path, "/scrape" ) )
+			announce->score = uv_now( client->handle->stream->loop );
+			client->request->announce = announce;
+			client->requestType = ClientRequest_announce;
+		}
+
+	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) )
 		processScrape( query, querySize );
 
 	else

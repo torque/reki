@@ -7,6 +7,7 @@
 ClientConnection *ClientConnection_new( void ) {
 	ClientConnection *client = malloc( sizeof(*client) );
 	client->handle = malloc( sizeof(*client->handle) );
+	client->request = malloc( sizeof(*client->request) );
 	client->readBuffer = StringBuffer_new( );
 	client->writeBuffer = StringBuffer_new( );
 	memset( client->compactAddress, 0, AddressOffset_Size );
@@ -20,9 +21,18 @@ void ClientConnection_free( ClientConnection *client ) {
 	if ( !client )
 		return;
 
-	ClientAnnounceData_free( client->announce );
+	switch ( client->requestType ) {
+		case ClientRequest_announce: {
+			ClientAnnounceData_free( client->request->announce );
+			break;
+		}
+
+		case ClientRequest_scrape:
+			break;
+	}
 	StringBuffer_free( client->readBuffer  );
 	StringBuffer_free( client->writeBuffer );
+	free( client->request );
 	free( client->handle );
 	free( client );
 }
