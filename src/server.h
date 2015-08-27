@@ -5,6 +5,8 @@ typedef struct _Server Server;
 typedef union _uvServerHandle ServerHandle;
 typedef enum _ServerProtocol ServerProtocol;
 
+#include "MemoryStore.h"
+
 struct _Server {
 	enum _ServerProtocol {
 		ServerProtocol_TCP,
@@ -14,6 +16,7 @@ struct _Server {
 	const char *bindIP;
 	const char *bindPort;
 	short ipFamily;
+	MemoryStore *memStore;
 
 	union _uvServerHandle {
 		uv_tcp_t *tcpHandle;
