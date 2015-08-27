@@ -22,6 +22,7 @@ static void uvReadBufferAlloc( uv_handle_t *handle, size_t suggested_size, uv_bu
 static void closeClientConnection( uv_handle_t *handle ) {
 	dbg_info( "final cleanup." );
 	ClientConnection *client = handle->data;
+	checktime( client, "Close connection." );
 	free( handle );
 	ClientConnection_free( client );
 }
@@ -123,6 +124,9 @@ static void newClientConnection( uv_stream_t *server, int status ) {
 
 	if ( uv_accept( server, (uv_stream_t*)clientConnection ) == 0 ) {
 		ClientConnection *client = ClientConnection_new( );
+#if defined(CLIENTTIMEINFO)
+		client->startTime = uv_now( server->loop );
+#endif
 		client->handle->tcpHandle = clientConnection;
 		clientConnection->data = (void*)client;
 

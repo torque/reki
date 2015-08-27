@@ -15,10 +15,11 @@ OBJECTS := $(addprefix $(OBJDIR)/, $(SOURCES:.c=.o))
 
 all: debug
 
-production: DEFS += -DPRODUCTION -DNDEBUG
-production: CFLAGS += -O2
+production: DEFS += -DPRODUCTION -DNDEBUG -DCLIENTTIMEINFO
+production: CFLAGS += -Os
 production: $(TARGET)
 
+debug: DEFS += -DCLIENTTIMEINFO
 debug: CFLAGS += -O0 -g -Wno-unused-function -fsanitize=address -fno-omit-frame-pointer
 debug: LDFLAGS += -fsanitize=address -g
 debug: $(TARGET)
