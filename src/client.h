@@ -5,17 +5,27 @@
 #include <uv.h>
 
 typedef struct _ClientConnection ClientConnection;
-typedef union _ClientRequestData ClientRequestData;
-typedef enum  _ClientRequestType ClientRequestType;
+typedef union  _ClientRequestData ClientRequestData;
+typedef enum   _ClientRequestType ClientRequestType;
+typedef enum   _ClientError ClientError;
 
 #include "server.h"
 #include "RequestParser.h"
 #include "announce.h"
 
+enum _ClientError {
+	ClientError_okay = 0;
+	ClientError_unknownAddressFamily;
+	ClientError_getaddrinfoFailed;
+	ClientError_getpeernameFailed;
+};
+
 typedef struct {
 	int pad;
 } ClientScrapeData;
 
+#define CompactAddress_IPv4Flag 1
+#define CompactAddress_IPv6Flag 2
 enum _CompactAddressOffsets {
 	AddressOffset_Metadata    =  0,
 	AddressOffset_IPv4Bencode =  1,
@@ -62,8 +72,8 @@ struct _ClientConnection {
 #endif
 };
 
-ClientConnection *ClientConnection_new( void );
-void ClientConnection_free( ClientConnection *client );
+ClientConnection *Client_new( void );
+void Client_free( ClientConnection *client );
 
-int ClientConnection_getIPFromString( ClientConnection *client, const char *address, const char *port );
-int ClientConnection_getIPFromSocket( ClientConnection* client );
+ClientError Client_IPFromString( ClientConnection *client, const char *address, const char *port );
+ClientError Client_IPFromSocket( ClientConnection* client );

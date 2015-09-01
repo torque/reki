@@ -4,7 +4,7 @@
 #include "client.h"
 #include "dbg.h"
 
-ClientConnection *ClientConnection_new( void ) {
+ClientConnection *Client_new( void ) {
 	ClientConnection *client = malloc( sizeof(*client) );
 	client->handle = malloc( sizeof(*client->handle) );
 	client->request = malloc( sizeof(*client->request) );
@@ -17,7 +17,7 @@ ClientConnection *ClientConnection_new( void ) {
 	return client;
 }
 
-void ClientConnection_free( ClientConnection *client ) {
+void Client_free( ClientConnection *client ) {
 	if ( !client )
 		return;
 
@@ -37,7 +37,8 @@ void ClientConnection_free( ClientConnection *client ) {
 	free( client );
 }
 
-int ClientConnection_getIPFromString( ClientConnection *client, const char *address, const char *port ) {
+ClientError Client_IPFromString( ClientConnection *client, const char *address, const char *port ) {
+	ClientError status;
 	struct addrinfo hints, *res;
 	memset( &hints, 0, sizeof(hints) );
 	// OS X manpage says PF_UNSPEC but linux says AF_UNSPEC. PF_UNSPEC is
@@ -49,64 +50,80 @@ int ClientConnection_getIPFromString( ClientConnection *client, const char *addr
 	// this will probably need to be switched.
 	int e = getaddrinfo( address, port, &hints, &res );
 	if ( e )
-		goto error;
-	else {
-		switch ( res->ai_family ) {
-			case AF_INET: {
-				memcpy( client->compactAddress + AddressOffset_IPv4Address, &((struct sockaddr_in*)res->ai_addr)->sin_addr, 4 );
-				if ( port )
-					memcpy( client->compactAddress + AddressOffset_IPv4Port , &((struct sockaddr_in*)res->ai_addr)->sin_port, 2 );
-				break;
-			}
+		goto getaddrinfoFailed;
 
-			case AF_INET6: {
-				memcpy( client->compactAddress + AddressOffset_IPv6Address, &((struct sockaddr_in6*)res->ai_addr)->sin6_addr, 16 );
-				if ( port )
-					memcpy( client->compactAddress + AddressOffset_IPv6Port , &((struct sockaddr_in6*)res->ai_addr)->sin6_port,  2 );
-				break;
-			}
-
-			default:
-				goto freeaddress;
+	switch ( res->ai_family ) {
+		case AF_INET: {
+			memcpy( client->compactAddress + AddressOffset_IPv4Address, &((struct sockaddr_in*)res->ai_addr)->sin_addr, 4 );
+			if ( port )
+				memcpy( client->compactAddress + AddressOffset_IPv4Port , &((struct sockaddr_in*)res->ai_addr)->sin_port, 2 );
+			client->compactAddress[0] |= CompactAddress_IPv4Flag;
+			break;
 		}
+
+		case AF_INET6: {
+			memcpy( client->compactAddress + AddressOffset_IPv6Address, &((struct sockaddr_in6*)res->ai_addr)->sin6_addr, 16 );
+			if ( port )
+				memcpy( client->compactAddress + AddressOffset_IPv6Port , &((struct sockaddr_in6*)res->ai_addr)->sin6_port,  2 );
+			client->compactAddress[0] |= CompactAddress_IPv6Flag;
+			break;
+		}
+
+		default:
+			goto UnknownAddress;
 	}
 
 	freeaddrinfo( res );
-	return 0;
+	return ClientError_okay;
 
-freeaddress:
-	log_err( "don't recognize address family!!!" );
+UnknownAddress:
+	log_err( "IPFromString: unknown address family: %d", res->ai_family );
 	freeaddrinfo( res );
+	status = ClientError_unknownAddressFamily;
+	goto error;
+
+getaddrinfoFailed:
+	log_err( "getaddrinfo failed: %s", gai_strerror( e ) );
+	status = ClientError_getaddrinfoFailed;
 
 error:
-	log_err( "getaddrinfo failed: %s", gai_strerror(e) );
-	return 1;
+	return status;
 }
 
 
-int ClientConnection_getIPFromSocket( ClientConnection* client ) {
+ClientError Client_IPFromSocket( ClientConnection* client ) {
+	ClientError status;
 	struct sockaddr_storage peerSocket;
-	int ret, namelen = sizeof(peerSocket);
-	ret = uv_tcp_getpeername( client->handle->tcpHandle, (struct sockaddr*)&peerSocket, &namelen );
-	if ( ret ) {
-		log_err( "Getpeername error: %s", uv_err_name( ret ) );
-		return 1;
-	}
+	int namelen = sizeof(peerSocket);
+	int e = uv_tcp_getpeername( client->handle->tcpHandle, (struct sockaddr*)&peerSocket, &namelen );
+	if ( e )
+		goto getpeernameFailed;
 
 	switch ( peerSocket.ss_family ) {
 		case AF_INET: {
 			memcpy( client->compactAddress + AddressOffset_IPv4Address, &((struct sockaddr_in*)&peerSocket)->sin_addr, 4 );
+			client->compactAddress[0] |= CompactAddress_IPv4Flag;
 			break;
 		}
 		case AF_INET6: {
 			memcpy( client->compactAddress + AddressOffset_IPv6Address, &((struct sockaddr_in6*)&peerSocket)->sin6_addr, 16 );
+			client->compactAddress[0] |= CompactAddress_IPv6Flag;
 			break;
 		}
-		default: {
-			dbg_info( "getIPFromSocket unknown family????" );
-			return 1;
-		}
+		default:
+			goto UnknownAddress;
 	}
 
-	return 0;
+	return ClientError_okay;
+
+UnknownAddress:
+	dbg_info( "IPFromSocket: unknown address family: %d", peerSocket.ss_family );
+	status = ClientError_unknownAddressFamily;
+
+getpeernameFailed:
+	log_err( "getpeername failed: %s", uv_err_name( e ) );
+	status = ClientError_getpeernameFailed;
+
+error:
+	return status;
 }
