@@ -26,13 +26,23 @@ typedef struct {
 
 #define CompactAddress_IPv4Flag 1
 #define CompactAddress_IPv6Flag 2
+
+enum _CompactAddressMetadataFlags {
+	AddressMetadata_IPv4Flag = 1 << 0,
+	AddressMetadata_IPv6Flag = 1 << 1,
+	AddressMetadata_IPv4Port = 1 << 2,
+	AddressMetadata_IPv6Port = 1 << 3,
+}
+
 enum _CompactAddressOffsets {
 	AddressOffset_Metadata    =  0,
 	AddressOffset_IPv4Bencode =  1,
 	AddressOffset_IPv4Address =  3,
 	AddressOffset_IPv4Port    =  7,
+	AddressOffset_IPv4Size    =  8,
 	AddressOffset_IPv6Bencode =  9,
 	AddressOffset_IPv6Address = 12,
+	AddressOffset_IPv6Size    = 21,
 	AddressOffset_IPv6Port    = 28,
 	AddressOffset_Size        = 30,
 };
@@ -74,6 +84,8 @@ struct _ClientConnection {
 
 ClientConnection *Client_new( void );
 void Client_free( ClientConnection *client );
+void Client_handleConnection( ClientConnection *client );
+void Client_terminate( ClientConnection *client );
 
 ClientError Client_IPFromString( ClientConnection *client, const char *address, const char *port );
 ClientError Client_IPFromSocket( ClientConnection* client );

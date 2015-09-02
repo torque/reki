@@ -3,10 +3,17 @@
 #include <stdbool.h>
 
 typedef struct _HttpParserInfo HttpParserInfo;
+typedef enum _HttpParserError HttpParserError;
 
 #include "../http-parser/http_parser.h"
 #include "StringBuffer.h"
 #include "client.h"
+
+enum _HttpParserError {
+	ParserError_okay = 0,
+	ParserError_httpParserError,
+	ParserError_urlParserError,
+};
 
 struct _HttpParserInfo {
 	http_parser *parser;
@@ -25,5 +32,8 @@ struct _HttpParserInfo {
 	bool httpParserDone;
 };
 
-HttpParserInfo *HttpParserInfo_new( void );
-void HttpParserInfo_free( HttpParserInfo *parserInfo );
+HttpParserInfo *HttpParser_new( void );
+void HttpParser_free( HttpParserInfo *parserInfo );
+
+HttpParserError HttpParser_parse( HttpParserInfo *parserInfo, const char *input, size_t length );
+HttpParserError HttpParser_parseURL( HttpParserInfo *parserInfo, char **path, size_t *pathSize, char **query, size_t *querySize );

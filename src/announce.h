@@ -22,12 +22,8 @@ struct _ClientAnnounceData {
 	// sending junk info to clients. For later: check port within 0-65535
 	// and ip within RFC 1918/4007 limits.
 
-	// Of these, port is the only one that need not be copied, since it
-	// won't contain urlencoded characters that need to be decoded.
-	char *id, *infoHash, *ip;
-	int IPType;
-	unsigned long port;
-	// Will not serve more than 50 peers at a time anyway.
+	char *id, *infoHash;
+	// Will not serve more than 20 peers at a time anyway.
 	uint8_t  numwant;
 	// Currently unused.
 	uint64_t uploaded, downloaded, left;

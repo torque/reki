@@ -27,7 +27,8 @@ static int httpHeaderField( http_parser *parser, const char *at, size_t length )
 		char address[parserInfo->lastValueLength+1];
 		memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
 		address[parserInfo->lastValueLength] = '\0';
-		ClientConnection_getIPFromString( parserInfo->client, address, NULL );
+		// doesn't actually matter if this fails or not.
+		ClientConnection_IPFromString( parserInfo->client, address, NULL );
 
 		parserInfo->httpParserDone = true;
 		return 0;
@@ -66,7 +67,7 @@ static int httpHeadersComplete( http_parser *parser ) {
 			char address[parserInfo->lastValueLength+1];
 			memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
 			address[parserInfo->lastValueLength] = '\0';
-			ClientConnection_getIPFromString( parserInfo->client, address, NULL );
+			ClientConnection_IPFromString( parserInfo->client, address, NULL );
 		}
 		parserInfo->httpParserDone = true;
 		// maybe return an error to abort parsing at this point?
@@ -75,7 +76,7 @@ static int httpHeadersComplete( http_parser *parser ) {
 	return 0;
 }
 
-HttpParserInfo *HttpParserInfo_new( void ) {
+HttpParserInfo *HttpParser_new( void ) {
 	static http_parser_settings settings = {
 		.on_url              = httpURL,
 		.on_header_field     = httpHeaderField,
@@ -106,11 +107,33 @@ HttpParserInfo *HttpParserInfo_new( void ) {
 	return parserInfo;
 }
 
-void HttpParserInfo_free( HttpParserInfo *parserInfo ) {
+void HttpParser_free( HttpParserInfo *parserInfo ) {
 	if ( !parserInfo ) return;
 
-	dbg_info("httpParserInfo_free");
+	dbg_info("httpParser_free");
 	free( parserInfo->parser );
 	free( parserInfo->parsedURL );
 	free( parserInfo );
+}
+
+HttpParserError HttpParser_parse( HttpParserInfo *parserInfo, const char *input, size_t length ) {
+	size_t bytesParsed = http_parser_execute( parserInfo->parser, parserInfo->settings, input, length );
+	dbg_info( "http_parser_execute has completed running." );
+
+	if ( parserInfo->parser->http_errno || parserInfo->parser->upgrade )
+		return ParserError_httpParserError;
+
+	return ParserError_okay;
+}
+
+HttpParserError HttpParser_parseURL( HttpParserInfo *parserInfo, char **path, size_t *pathSize, char **query, size_t *querySize ) {
+	if ( http_parser_parse_url( parserInfo->URLString, parserInfo->URLStringLength, 0, parserInfo->parsedURL ) )
+		return ParserError_urlParserError;
+
+	*path      = parserInfo->URLString + parserInfo->parsedURL->field_data[UF_PATH].off;
+	*pathSize  = parserInfo->parsedURL->field_data[UF_PATH].len;
+	*query     = parserInfo->URLString + parserInfo->parsedURL->field_data[UF_QUERY].off;
+	*querySize = parserInfo->parsedURL->field_data[UF_QUERY].len;
+
+	return ParserError_okay;
 }
