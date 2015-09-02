@@ -41,7 +41,7 @@ static void Client_cleanup( uv_handle_t *clientHandle ) {
 	dbg_info( "final cleanup." );
 	ClientConnection *client = handle->data;
 	checktime( client, "Close connection." );
-	HttpParserInfo_free( client->parserInfo );
+	HttpParser_free( client->parserInfo );
 	ClientConnection_free( client );
 	// this is the client tcp handle.
 	free( handle );
@@ -101,7 +101,6 @@ static void Client_route( ClientConnection *client ) {
 		processScrape( query, querySize );
 
 	else {
-		log_warn( "Client made a bad request: %.*s", (int)parserInfo->URLStringLength, parserInfo->URLString );
 		const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:0\r\n\r\n";
 		StringBuffer_append( client->writeBuffer, invalidRoute, strlen( invalidRoute ) );
 		Client_reply( client );
@@ -118,31 +117,27 @@ static void Client_readRequest( uv_stream_t *clientConnection, ssize_t nread, co
 	ClientConnection *client = clientConnection->data;
 	if ( nread < 0 ) {
 		dbg_info( "Read error %zd: %s", nread, uv_err_name( nread ) );
-		// ParserInfo isn't freed by the client termination, but perhaps it
-		// should be. I don't know if an error here means the stream is in a
-		// writable state or not, but I assume not.
 
 		Client_terminate( client );
 		return;
 	}
 
 	if ( nread > 0 ) {
-		if ( HttpParserInfo_parse( client->parserInfo, buf->base, nread ) ) {
+		if ( HttpParser_parse( client->parserInfo, buf->base, nread ) ) {
 			// Should actually reply to the peer in this case?
 			Client_terminate( client );
 			return;
 		}
 	}
 
-	if ( client->parserInfo->httpParserDone ) {
+	if ( HttpParser_done( client->parserInfo ) ) {
 		uv_read_stop( client->handle->stream );
 		Client_route( client );
 	}
 }
 
 void Client_handleConnection( ClientConnection *client ) {
-	client->parserInfo = HttpParserInfo_new( );
-	client->parserInfo->client = client;
+	client->parserInfo = HttpParser_new( );
 
 	uv_read_start( client->handle->stream, Client_allocReadBuffer, Client_readRequest );
 }

@@ -1,9 +1,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../http-parser/http_parser.h"
+
 #include "RequestParser.h"
 #include "macros.h"
 #include "dbg.h"
+
+struct _HttpParserInfo {
+	http_parser *parser;
+	http_parser_settings *settings;
+
+	// pointers into the client->readBuffer string.
+	char *URLString;
+	int URLStringLength;
+	char *lastHeader;
+	int lastHeaderLength;
+	char *lastValue;
+	int lastValueLength;
+
+	struct http_parser_url *parsedURL;
+	bool httpParserDone;
+};
 
 static int httpURL( http_parser *parser, const char *at, size_t length ) {
 	dbg_info( "httpUrl" );
@@ -24,12 +42,6 @@ static int httpHeaderField( http_parser *parser, const char *at, size_t length )
 	if ( parserInfo->lastValue ) {
 		if ( parserInfo->httpParserDone ) return 0;
 
-		char address[parserInfo->lastValueLength+1];
-		memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
-		address[parserInfo->lastValueLength] = '\0';
-		// doesn't actually matter if this fails or not.
-		ClientConnection_IPFromString( parserInfo->client, address, NULL );
-
 		parserInfo->httpParserDone = true;
 		return 0;
 	}
@@ -40,7 +52,6 @@ static int httpHeaderField( http_parser *parser, const char *at, size_t length )
 
 	return 0;
 }
-
 
 // value also follows a header cb.
 static int httpHeaderValue( http_parser *parser, const char *at, size_t length ) {
@@ -62,13 +73,6 @@ static int httpHeadersComplete( http_parser *parser ) {
 	dbg_info( "httpHeadersComplete" );
 	HttpParserInfo *parserInfo = parser->data;
 	if ( !parserInfo->httpParserDone ) {
-		// if X-Real-IP is the last header, it needs to be parsed here.
-		if ( parserInfo->lastValue ) {
-			char address[parserInfo->lastValueLength+1];
-			memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
-			address[parserInfo->lastValueLength] = '\0';
-			ClientConnection_IPFromString( parserInfo->client, address, NULL );
-		}
 		parserInfo->httpParserDone = true;
 		// maybe return an error to abort parsing at this point?
 	}
@@ -116,6 +120,10 @@ void HttpParser_free( HttpParserInfo *parserInfo ) {
 	free( parserInfo );
 }
 
+bool HttpParser_done( HttpParserInfo *parserInfo ) {
+	return parserInfo->httpParserDone;
+}
+
 HttpParserError HttpParser_parse( HttpParserInfo *parserInfo, const char *input, size_t length ) {
 	size_t bytesParsed = http_parser_execute( parserInfo->parser, parserInfo->settings, input, length );
 	dbg_info( "http_parser_execute has completed running." );
@@ -137,3 +145,13 @@ HttpParserError HttpParser_parseURL( HttpParserInfo *parserInfo, char **path, si
 
 	return ParserError_okay;
 }
+
+// char address[parserInfo->lastValueLength+1];
+// memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
+// address[parserInfo->lastValueLength] = '\0';
+// ClientConnection_IPFromString( parserInfo->client, address, NULL );
+
+// char address[parserInfo->lastValueLength+1];
+// memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
+// address[parserInfo->lastValueLength] = '\0';
+// ClientConnection_IPFromString( parserInfo->client, address, NULL );
