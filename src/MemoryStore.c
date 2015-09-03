@@ -6,6 +6,7 @@
 #include <hiredis/adapters/libuv.h>
 
 #include "MemoryStore.h"
+#include "StringBuffer.h"
 #include "dbg.h"
 
 struct _MemoryStore {
@@ -65,7 +66,7 @@ int MemoryStore_attachToLoop( MemoryStore *store, uv_loop_t *loop ) {
 #define ANNOUNCE_INTERVAL 1800
 #define DROP_COUNT 3
 
-static void MemoryStore_backendAnounceResponse( redisAsyncContext *redis, void *voidReply, void *voidClient ) {
+static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, void *voidReply, void *voidClient ) {
 	if ( !voidReply || !voidClient ) return;
 
 	redisReply *reply = voidReply;
@@ -109,12 +110,25 @@ static void MemoryStore_backendAnounceResponse( redisAsyncContext *redis, void *
 		// }
 	}
 
+	redisAsyncCommand( context, NULL, NULL, "MULTI" );
+	// just run the remove events on a timer? no reason to call them every
+	// single announce or scrape.
+	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
+	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
+	if ( announce->left == 0 )
+		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:seeds %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, CompactAddress_Size );
+	else
+		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:peers %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, CompactAddress_Size );
+	// no callback is necessary
+	redisAsyncCommand( context, NULL, NULL, "EXEC" );
+
+	// do reply
 }
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client ) {
 	ClientAnnounceData *announce = client->request->announce;
-	uint64_t now  = uv_now( client->handle->stream->loop );
-	uint64_t then = now - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
+	// uint64_t now  = uv_now( client->handle->stream->loop );
+	uint64_t then = announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
 	redisAsyncCommand( store->context, NULL, NULL, "MULTI" );
 	// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
 	// redisAsyncCommand( store->context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", announce->infoHash, then );
@@ -126,8 +140,8 @@ void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client )
 	redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:seeds", store->namespace, announce->infoHash );
 	redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:peers", store->namespace, announce->infoHash );
 
-	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:seeds %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, now, then, announce->numwant );
-	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:peers %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, now, then, announce->numwant );
+	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:seeds %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, announce->score, then, announce->numwant );
+	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:peers %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, announce->score, then, announce->numwant );
 
 	// do this at the same time as the old peer pruning.
 	// if ( announce_data->left == 0 )
@@ -135,7 +149,7 @@ void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client )
 	// else
 	// 	redisAsyncCommand( store->context, NULL, NULL, "ZADD %s:%s:peers:compact %llu %b", store->namespace, announce->infoHash, now, &peer, sizeof(peer) );
 
-	redisAsyncCommand( store->context, NULL, client, "EXEC" );
+	redisAsyncCommand( store->context, MemoryStore_backendAnnounceResponse, client, "EXEC" );
 }
 
 int MemoryStore_fetchRequestData( MemoryStore *store, ClientConnection *client ) {

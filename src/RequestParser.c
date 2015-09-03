@@ -125,7 +125,7 @@ bool HttpParser_done( HttpParserInfo *parserInfo ) {
 }
 
 HttpParserError HttpParser_parse( HttpParserInfo *parserInfo, const char *input, size_t length ) {
-	size_t bytesParsed = http_parser_execute( parserInfo->parser, parserInfo->settings, input, length );
+	http_parser_execute( parserInfo->parser, parserInfo->settings, input, length );
 	dbg_info( "http_parser_execute has completed running." );
 
 	if ( parserInfo->parser->http_errno || parserInfo->parser->upgrade )

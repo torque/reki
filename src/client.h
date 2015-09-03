@@ -9,11 +9,11 @@ typedef union  _ClientRequestData ClientRequestData;
 typedef enum   _ClientRequestType ClientRequestType;
 
 #include "server.h"
+#include "StringBuffer.h"
 #include "RequestParser.h"
 #include "announce.h"
 
 typedef struct {
-	int pad;
 } ClientScrapeData;
 
 struct _ClientConnection {

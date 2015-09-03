@@ -25,21 +25,13 @@ static void Server_newTCPConnection( uv_stream_t *server, int status ) {
 #if defined(CLIENTTIMEINFO)
 		client->startTime = uv_now( server->loop );
 #endif
-
-		int ret = Client_IPFromSocket( client );
-		if ( ret ) {
-			log_err( "The peer's IP could not be divined." );
-			Client_terminate( client );
-			return;
-		}
-
 		Client_handleConnection( client );
 	} else {
 		Client_terminate( client );
 	}
 }
 
-static int Server_ListenAddressInfo( Server *server, struct sockaddr_storage *outAddress ) {
+static int Server_AddressInfo( Server *server, struct sockaddr_storage *outAddress ) {
 	struct addrinfo hints, *res;
 	memset( &hints, 0, sizeof(hints) );
 	hints.ai_family = AF_UNSPEC;

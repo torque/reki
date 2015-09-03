@@ -3,6 +3,7 @@
 
 #include "client.h"
 #include "dbg.h"
+#include "macros.h"
 
 ClientConnection *Client_new( void ) {
 	ClientConnection *client = malloc( sizeof(*client) );
@@ -33,12 +34,12 @@ void Client_free( ClientConnection *client ) {
 	free( client );
 }
 
-static void Client_cleanup( uv_handle_t *clientHandle ) {
+static void Client_cleanup( uv_handle_t *handle ) {
 	dbg_info( "final cleanup." );
 	ClientConnection *client = handle->data;
 	checktime( client, "Close connection." );
 	HttpParser_free( client->parserInfo );
-	ClientConnection_free( client );
+	Client_free( client );
 	// this is the client tcp handle.
 	free( handle );
 }
@@ -75,7 +76,7 @@ static void Client_reply( ClientConnection *client ) {
 static void Client_route( ClientConnection *client ) {
 	HttpParserInfo *parserInfo = client->parserInfo;
 
-	const char *path, *query;
+	char *path, *query;
 	size_t pathSize, querySize;
 	HttpParser_parseURL( parserInfo, &path, &pathSize, &query, &querySize );
 
@@ -83,9 +84,12 @@ static void Client_route( ClientConnection *client ) {
 	dbg_info( "Request query: %.*s", (int)querySize, query );
 	if ( EqualLiteralLength( path, pathSize, "/announce" ) ) {
 		ClientAnnounceData *announce = ClientAnnounceData_new( );
-		if ( ClientAnnounceData_parseURLQuery( announce, query, querySize ) )
+		if ( ClientAnnounceData_parseURLQuery( announce, query, querySize ) ) {
 			log_warn( "%s", announce->errorMessage );
-		else {
+			Client_terminate( client );
+			return;
+
+		} else {
 			dbg_info( "There was no error parsing the announce." );
 			// announce has no access to the loop.
 			announce->score = uv_now( client->handle->stream->loop );
