@@ -24,6 +24,7 @@ CompactError CompactAddress_setPort( char *compact, uint16_t port ) {
 CompactError CompactAddress_fromSocket( char *compact, struct sockaddr_storage *socket, bool hasPort ) {
 	switch ( socket->ss_family ) {
 		case AF_INET: {
+			dbg_info( "fromSocket: %08X", ntohl(((struct sockaddr_in*)socket)->sin_addr.s_addr) );
 			memcpy( compact + CompactAddress_IPv4AddressOffset, &((struct sockaddr_in*)socket)->sin_addr, 4 );
 			if ( hasPort )
 				memcpy( compact + CompactAddress_IPv4PortOffset , &((struct sockaddr_in*)socket)->sin_port, 2 );
@@ -31,6 +32,10 @@ CompactError CompactAddress_fromSocket( char *compact, struct sockaddr_storage *
 			break;
 		}
 		case AF_INET6: {
+// this is pretty dumb.
+#define dumb(x) ntohs(*(uint16_t*)(x + 0)), ntohs(*(uint16_t*)(x + 2)), ntohs(*(uint16_t*)(x + 4)), ntohs(*(uint16_t*)(x + 6)), ntohs(*(uint16_t*)(x + 8)), ntohs(*(uint16_t*)(x + 10)), ntohs(*(uint16_t*)(x + 12)), ntohs(*(uint16_t*)(x + 14))
+			dbg_info( "fromSocket: %04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X", dumb(((struct sockaddr_in6*)socket)->sin6_addr.s6_addr) );
+#undef dumb
 			memcpy( compact + CompactAddress_IPv6AddressOffset, &((struct sockaddr_in6*)socket)->sin6_addr, 16 );
 			if ( hasPort )
 				memcpy( compact + CompactAddress_IPv6PortOffset , &((struct sockaddr_in6*)socket)->sin6_port,  2 );
@@ -65,28 +70,3 @@ CompactError CompactAddress_fromString( char *compact, const char *address, cons
 	freeaddrinfo( res );
 	return status;
 }
-
-
-// CompactError Client_IPFromSocket( ClientConnection* client ) {
-// 	CompactError status;
-// 	struct sockaddr_storage peerSocket;
-// 	int namelen = sizeof(peerSocket);
-// 	int e = uv_tcp_getpeername( client->handle->tcpHandle, (struct sockaddr*)&peerSocket, &namelen );
-// 	if ( e )
-// 		goto getpeernameFailed;
-
-
-
-// 	return ClientError_okay;
-
-// UnknownAddress:
-// 	dbg_info( "IPFromSocket: unknown address family: %d", peerSocket.ss_family );
-// 	status = ClientError_unknownAddressFamily;
-
-// getpeernameFailed:
-// 	log_err( "getpeername failed: %s", uv_err_name( e ) );
-// 	status = ClientError_getpeernameFailed;
-
-// error:
-// 	return status;
-// }
