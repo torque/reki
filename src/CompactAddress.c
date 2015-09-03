@@ -13,6 +13,11 @@ void CompactAddress_init( char *compact ) {
 }
 
 CompactError CompactAddress_setPort( char *compact, uint16_t port ) {
+	port = htons( port );
+	if ( !(compact[0] & CompactAddress_IPv4PortFlag) )
+		memcpy( compact + CompactAddress_IPv4PortOffset, &port, 2 );
+	if ( !(compact[0] & CompactAddress_IPv6PortFlag) )
+		memcpy( compact + CompactAddress_IPv6PortOffset, &port, 2 );
 	return 0;
 }
 

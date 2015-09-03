@@ -66,6 +66,67 @@ static int decodeInfoHash( const char *input, size_t length, char **output ) {
 	return o;
 }
 
+static int handleIPv4( ClientAnnounceData *announce, const char *value, size_t valueLength ) {
+	char *ipv4;
+	int decodedLength = decodeURLString( value, valueLength, &ipv4 );
+	// 0.0.0.0 the shortest ipv4 address?
+	if ( decodedLength < 7 ) return 1;
+
+	char *port;
+	int portLength = 0;
+	for ( int i = 7; i < decodedLength; i++ ) {
+		if ( ipv4[i] == ':' ) {
+			ipv4[i] = '\0';
+			port = ipv4 + i + 1;
+			portLength = decodedLength - i - 1;
+			dbg_info( "handleIPv4: %s : %s; %d", ipv4, port, portLength );
+		}
+	}
+
+	int status = CompactAddress_fromString( announce->compact, ipv4, portLength? port: NULL );
+	if ( portLength )
+		announce->compact[0] |= CompactAddress_IPv4PortFlag;
+
+	free( ipv4 );
+	return status;
+}
+
+static int handleIPv6( ClientAnnounceData *announce, const char *value, size_t valueLength ) {
+	// ipv6 can be of form: [::1]:9001 or ::1
+	char *ipv6;
+	int decodedLength = decodeURLString( value, valueLength, &ipv6 );
+	if ( decodedLength < 2 ) return 1;
+
+	// have to use a scratch pointer because incrementing ipv6 means
+	// freeing is invalid, and keeping track of whether or not it has been
+	// incremented is probably worse than just using a scratch pointer.
+	char *port, *scratch = ipv6;
+	int portLength = 0;
+	if ( scratch[0] == '[' ) {
+		// chop off the [
+		scratch++;
+		for( int i = 2; i < decodedLength - 1; i++ ) {
+			if ( scratch[i] == ']' ) {
+				// null terminate ipv6. port will already be null terminated
+				// because decodeURLString null terminates its output.
+				scratch[i] = '\0';
+				port = scratch + i + 2;
+				portLength = decodedLength - i - 3;
+				dbg_info( "handleIPv6: %s : %s; %d", scratch, port, portLength );
+				if ( portLength < 1 || portLength > 5 || i < 2 ) return 1;
+				break;
+			}
+		}
+	}
+
+	int status = CompactAddress_fromString( announce->compact, scratch, portLength? port: NULL );
+	if ( portLength )
+		announce->compact[0] |= CompactAddress_IPv6PortFlag;
+
+	free( ipv6 );
+	return status;
+}
+
 ClientAnnounceData *ClientAnnounceData_new( void ) {
 	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
 	announce->numwant = 20;
@@ -75,6 +136,7 @@ ClientAnnounceData *ClientAnnounceData_new( void ) {
 }
 
 void ClientAnnounceData_free( ClientAnnounceData *announce ) {
+	dbg_info( "ClientAnnounceData_free" );
 	free( announce->infoHash );
 	free( announce->id );
 	free( announce );
@@ -135,16 +197,19 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		// tend to send these or not. Not supported for now.
 		// [1]: http://bittorrent.org/beps/bep_0007.html#announce-parameter
 		} else if ( !(seenFields & SeenFieldOffset_IPv4) && EqualLiteralLength( key, keyLength, "ipv4" ) ) {
-			dbg_info( "IPv4: %.*s", (int)valueLength, value);
+			CheckError( handleIPv4( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv4 );
 			seenFields |= SeenFieldOffset_IPv4;
 
 		} else if ( !(seenFields & SeenFieldOffset_IPv6) && EqualLiteralLength( key, keyLength, "ipv6" ) ) {
-			dbg_info( "IPv6: %.*s", (int)valueLength, value);
+			CheckError( handleIPv6( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv6 );
 			seenFields |= SeenFieldOffset_IPv6;
 
 		} else if ( !(seenFields & SeenFieldOffset_port) && EqualLiteralLength( key, keyLength, "port" ) ) {
 			dbg_info( "port: %.*s", (int)valueLength, value );
-			announce->port = strtoul( value, NULL, 10 );
+			unsigned long port = strtoul( value, NULL, 10 );
+			dbg_info( "portlong: %lu", port );
+			CheckError( (port < 1) || (port > 65535), errorCode = AnnounceError_malformedPort );
+			CompactAddress_setPort( announce->compact, (uint16_t)port );
 			seenFields |= SeenFieldOffset_port;
 
 		} else if ( !(seenFields & SeenFieldOffset_left) && EqualLiteralLength( key, keyLength, "left" ) ) {
