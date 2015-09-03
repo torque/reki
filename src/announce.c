@@ -13,7 +13,13 @@ const char *AnnounceErrorMessage( AnnounceError error ) {
 		"There was no error.",
 		"The request was malformed.",
 		"The request was invalid (missing a field).",
-		"The request was invalid (a field was malformed).",
+		"The request contained a malformed field.",
+		"The request contained a malformed peer_id.",
+		"The request contained a malformed info_hash.",
+		"The request contained a malformed ip.",
+		"The request contained a malformed ipv4.",
+		"The request contained a malformed ipv6.",
+		"The request contained a malformed port.",
 		"The requested torrent does not exist."
 	};
 	return AnnounceErrorStrings[error];

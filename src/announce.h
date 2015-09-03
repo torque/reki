@@ -14,6 +14,12 @@ enum _AnnounceError {
 	AnnounceError_invalidRequest,
 	AnnounceError_missingField,
 	AnnounceError_malformedField,
+	AnnounceError_malformedID,
+	AnnounceError_malformedInfoHash,
+	AnnounceError_malformedIP,
+	AnnounceError_malformedIPv4,
+	AnnounceError_malformedIPv6,
+	AnnounceError_malformedPort,
 	AnnounceError_noTorrent,
 };
 
