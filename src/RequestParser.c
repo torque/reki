@@ -114,7 +114,7 @@ HttpParserInfo *HttpParser_new( void ) {
 void HttpParser_free( HttpParserInfo *parserInfo ) {
 	if ( !parserInfo ) return;
 
-	dbg_info("httpParser_free");
+	dbg_info( "HttpParser_free" );
 	free( parserInfo->parser );
 	free( parserInfo->parsedURL );
 	free( parserInfo );
@@ -134,6 +134,15 @@ HttpParserError HttpParser_parse( HttpParserInfo *parserInfo, const char *input,
 	return ParserError_okay;
 }
 
+char *HttpParser_realIP( HttpParserInfo *parserInfo ) {
+	if ( !parserInfo->lastValue ) return NULL;
+
+	char *address = malloc( (parserInfo->lastValueLength + 1) * sizeof(*address) );
+	memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
+	address[parserInfo->lastValueLength] = '\0';
+	return address;
+}
+
 HttpParserError HttpParser_parseURL( HttpParserInfo *parserInfo, char **path, size_t *pathSize, char **query, size_t *querySize ) {
 	if ( http_parser_parse_url( parserInfo->URLString, parserInfo->URLStringLength, 0, parserInfo->parsedURL ) )
 		return ParserError_urlParserError;
@@ -145,13 +154,3 @@ HttpParserError HttpParser_parseURL( HttpParserInfo *parserInfo, char **path, si
 
 	return ParserError_okay;
 }
-
-// char address[parserInfo->lastValueLength+1];
-// memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
-// address[parserInfo->lastValueLength] = '\0';
-// ClientConnection_IPFromString( parserInfo->client, address, NULL );
-
-// char address[parserInfo->lastValueLength+1];
-// memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
-// address[parserInfo->lastValueLength] = '\0';
-// ClientConnection_IPFromString( parserInfo->client, address, NULL );
