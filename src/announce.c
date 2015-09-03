@@ -190,7 +190,9 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		// it's not currently supported.
 		// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
 		} else if ( !(seenFields & SeenFieldOffset_IP) && EqualLiteralLength( key, keyLength, "ip" ) ) {
-			dbg_info( "IP: %.*s", (int)valueLength, value );
+			char *ip;
+			CheckError( decodeURLString( value, valueLength, &ip ) < 1, errorCode = AnnounceError_malformedIP );
+			CheckError( CompactAddress_fromString( announce->compact, ip, NULL), errorCode = AnnounceError_malformedIP );
 			seenFields |= SeenFieldOffset_IP;
 
 		// Optional fields according to BEP7[1], I don't know if clients
@@ -217,6 +219,19 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 			announce->left = strtoull( value, NULL, 10 );
 			seenFields |= SeenFieldOffset_left;
 
+		} else if ( !(seenFields & SeenFieldOffset_event) && EqualLiteralLength( key, keyLength, "event" ) ) {
+			if ( EqualLiteralLength( value, valueLength, "started" ) )
+				announce->event = AnnounceEvent_start;
+			else if ( EqualLiteralLength( value, valueLength, "completed" ) )
+				announce->event = AnnounceEvent_complete;
+			else if ( EqualLiteralLength( value, valueLength, "stopped" ) ) {
+				announce->event = AnnounceEvent_stop;
+				// just hang up.
+				return AnnounceError_okay;
+			} else
+				announce->event = AnnounceEvent_unknown;
+
+			seenFields |= SeenFieldOffset_event;
 		}
 	}
 	// According to BEP23, not supporting non-compact responses is
