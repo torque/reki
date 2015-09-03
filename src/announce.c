@@ -25,29 +25,29 @@ const char *AnnounceErrorMessage( AnnounceError error ) {
 	return AnnounceErrorStrings[error];
 }
 
-int decodeURLString( const char *input, size_t length, char **output ) {
+static int decodeURLString( const char *input, size_t length, char **output ) {
 	// output is guaranteed to be the same size as the input or smaller.
 	int o = 0;
 	*output = malloc( (length + 1)*sizeof(**output) );
 	for ( int i = 0; (i < length) && (o < length); i++, o++ ) {
 		if ( input[i] == '%' ) {
 			if ( i + 2 > length )
-				return 1;
+				return -1;
 			char encodedChar[3] = { input[i + 1], input[i + 2], '\0' };
 			long decodedChar = strtol( encodedChar, NULL, 16 );
 			if ( decodedChar < UCHAR_MAX )
 				(*output)[o] = (char)decodedChar;
 			else
-				return 1;
+				return -2;
 			i += 2;
 		} else
 			(*output)[o] = input[i];
 	}
 	(*output)[o] = '\0';
-	return 0;
+	return o;
 }
 
-int decodeInfoHash( const char *input, size_t length, char **output ) {
+static int decodeInfoHash( const char *input, size_t length, char **output ) {
 	// kind of janky to hardcode the length. note: since snprintf null
 	// terminates, output has to be an extra character in width to avoid
 	// an OOB write.
@@ -56,14 +56,14 @@ int decodeInfoHash( const char *input, size_t length, char **output ) {
 	for ( int i = 0; (i < length) && (o < 40); i++, o++ ) {
 		if ( input[i] == '%' ) {
 			if ( i + 2 > length )
-				return 1;
+				return -1;
 			(*output)[o++] = tolower( input[++i] );
 			(*output)[o]   = tolower( input[++i] );
 		} else
 			snprintf( (*output) + o++, 3, "%02x", input[i] );
 	}
 	(*output)[o] = '\0';
-	return 0;
+	return o;
 }
 
 ClientAnnounceData *ClientAnnounceData_new( void ) {
@@ -115,11 +115,11 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		// Compare keys to get values. This is not particularly elegant.
 		if ( !(seenFields & SeenFieldOffset_peerID) && EqualLiteralLength( key, keyLength, "peer_id" ) ) {
 			dbg_info( "peer_id: %.*s", (int)valueLength, value );
-			CheckError( decodeURLString( value, valueLength, &announce->id ), errorCode = AnnounceError_malformedField );
+			CheckError( decodeURLString( value, valueLength, &announce->id ) < 1, errorCode = AnnounceError_malformedID );
 			seenFields |= SeenFieldOffset_peerID;
 
 		} else if ( !(seenFields & SeenFieldOffset_infoHash) && EqualLiteralLength( key, keyLength, "info_hash" ) ) {
-			CheckError( decodeInfoHash( value, valueLength, &announce->infoHash ), errorCode = AnnounceError_malformedField );
+			CheckError( decodeInfoHash( value, valueLength, &announce->infoHash ) < 1, errorCode = AnnounceError_malformedInfoHash );
 			dbg_info( "info_hash: %.*s", 40, announce->infoHash );
 			seenFields |= SeenFieldOffset_infoHash;
 
