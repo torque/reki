@@ -110,7 +110,7 @@ int Server_listen( Server *server ) {
 	checkFunction( uv_listen( server->handle->stream, 128, Server_newTCPConnection ) );
 
 	char namebuf[INET6_ADDRSTRLEN];
-	checkFunction( getnameinfo( (struct sockaddr *)&address, address.ss_len, namebuf, sizeof(namebuf), NULL, 0, NI_NUMERICHOST ) );
+	checkFunction( getnameinfo( (struct sockaddr *)&address, sizeof(address), namebuf, sizeof(namebuf), NULL, 0, NI_NUMERICHOST ) );
 	dbg_info( "Listening on [%s]:%d.", namebuf, ntohs(((struct sockaddr_in*)&address)->sin_port) );
 
 	return 0;
