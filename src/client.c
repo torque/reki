@@ -15,6 +15,7 @@ ClientConnection *Client_new( void ) {
 }
 
 void Client_free( ClientConnection *client ) {
+	dbg_info( "Client_free" );
 	if ( !client )
 		return;
 
@@ -35,7 +36,6 @@ void Client_free( ClientConnection *client ) {
 }
 
 static void Client_cleanup( uv_handle_t *handle ) {
-	dbg_info( "final cleanup." );
 	ClientConnection *client = handle->data;
 	checktime( client, "Close connection." );
 	HttpParser_free( client->parserInfo );
@@ -71,9 +71,22 @@ static void Client_reply( ClientConnection *client ) {
 	uv_write( reply, client->handle->stream, &uvMessage, 1, Client_replyDone );
 }
 
+#define ErrorFormat "d14:failure reason%lu:%se"
+static void Client_replyError( ClientConnection *client, const char *message, size_t messageLength ) {
+	// I wonder if snprintf is optimized to not eat up a whole bunch of
+	// time in the case that n is 0
+	int length = snprintf( NULL, 0, ErrorFormat, messageLength, message );
+	StringBuffer_sprintf( client->writeBuffer, "%u\r\n\r\n" ErrorFormat, length, messageLength, message );
+	Client_reply( client );
+}
+#undef ErrorFormat
+
 #define processScrape( a, b ) dbg_info( "scraping" )
 
 static void Client_route( ClientConnection *client ) {
+	const static char *okayRoute = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:";
+	const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:0\r\n\r\n";
+
 	HttpParserInfo *parserInfo = client->parserInfo;
 
 	char *path, *query;
@@ -83,34 +96,57 @@ static void Client_route( ClientConnection *client ) {
 	dbg_info( "Requested path: %.*s", (int)pathSize, path );
 	dbg_info( "Request query: %.*s", (int)querySize, query );
 	if ( EqualLiteralLength( path, pathSize, "/announce" ) ) {
+		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
 		ClientAnnounceData *announce = ClientAnnounceData_new( );
+		announce->score = uv_now( client->handle->stream->loop );
+		client->requestType = ClientRequest_announce;
+		client->request->announce = announce;
 		if ( ClientAnnounceData_parseURLQuery( announce, query, querySize ) ) {
 			log_warn( "%s", announce->errorMessage );
-			Client_terminate( client );
+			Client_replyError( client, announce->errorMessage, strlen( announce->errorMessage ) );
 			return;
-
-		} else {
-			dbg_info( "There was no error parsing the announce." );
-			// announce has no access to the loop.
-			announce->score = uv_now( client->handle->stream->loop );
-			client->request->announce = announce;
-			client->requestType = ClientRequest_announce;
 		}
 
-	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) )
+		dbg_info( "There was no error parsing the announce." );
+		if ( announce->event == AnnounceEvent_stop ) {
+			StringBuffer_append( client->writeBuffer, "6\r\n\r\n3:bye\n", 11 );
+			Client_reply( client );
+			return;
+		}
+
+		// check if ip has been set
+		if ( !(announce->compact[0] & CompactAddress_IPv4Flag) && !(announce->compact[0] & CompactAddress_IPv6Flag) ) {
+			// read from socket and header.
+			char *xRealIP = HttpParser_realIP( client->parserInfo );
+			if ( xRealIP ) {
+				CompactAddress_fromString( announce->compact, xRealIP, NULL );
+				free( xRealIP );
+			} else {
+				struct sockaddr_storage sock;
+				int len = sizeof(sock);
+				int e = uv_tcp_getpeername( client->handle->tcpHandle, (struct sockaddr*)&sock, &len );
+				if ( e ) {
+					Client_replyError( client, "IP could not be determined.", 27 );
+					return;
+				}
+
+				CompactAddress_fromSocket( announce->compact, &sock, false );
+			}
+		}
+
+	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {
+		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
 		processScrape( query, querySize );
 
-	else {
-		const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:0\r\n\r\n";
+	} else {
 		StringBuffer_append( client->writeBuffer, invalidRoute, strlen( invalidRoute ) );
 		Client_reply( client );
 		return;
 	}
 
-	const static char *okayRoute = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:";
-	// "%d\r\n\r\n"
-	StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
-	MemoryStore_processAnnounce( client->server->memStore, client );
+	// MemoryStore_processAnnounce( client->server->memStore, client );
+	StringBuffer_append( client->writeBuffer, "3\r\n\r\nhi\n", 8 );
+	Client_reply( client );
 }
 
 static void Client_readRequest( uv_stream_t *clientConnection, ssize_t nread, const uv_buf_t *buf ) {
