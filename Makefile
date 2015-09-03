@@ -1,12 +1,13 @@
 TARGET  := reki
-CC      := /Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
-CFLAGS  := -Wall -std=c99
+OBJDIR  := build
+
+CC      := gcc
+CFLAGS  := -Wall -std=c99 -I"$(OBJDIR)/include"
 LDFLAGS :=
 # http://man7.org/linux/man-pages/man7/feature_test_macros.7.html
 DEFS    := -D_XOPEN_SOURCE=600
 
 SRCDIRS := src
-OBJDIR  := build
 DEPS    := $(OBJDIR)/lib/libhiredis.a $(OBJDIR)/lib/libuv.a
 SOURCES := $(foreach dir, $(SRCDIRS), $(wildcard $(dir)/*.c)) http-parser/http_parser.c
 OBJECTS := $(addprefix $(OBJDIR)/, $(SOURCES:.c=.o))
@@ -16,19 +17,20 @@ OBJECTS := $(addprefix $(OBJDIR)/, $(SOURCES:.c=.o))
 all: debug
 
 production: DEFS += -DPRODUCTION -DNDEBUG -DCLIENTTIMEINFO
-production: CFLAGS += -Os
+production: CFLAGS += -Os -flto
+production: LDFLAGS += -flto
 production: $(TARGET)
 
 debug: DEFS += -DCLIENTTIMEINFO
-debug: CFLAGS += -O0 -g -Wno-unused-function -fsanitize=address -fno-omit-frame-pointer
-debug: LDFLAGS += -fsanitize=address -g
+debug: CFLAGS += -g -O0 -Wno-unused-function -fsanitize=address -fno-omit-frame-pointer
+debug: LDFLAGS += -g -fsanitize=address
 debug: $(TARGET)
 
-$(TARGET): $(OBJECTS) $(DEPS)
+$(TARGET): $(OBJECTS)
 	@printf "\e[1;32m LINK\e[m $@\n"
-	@$(CC) $^ $(LDFLAGS) -o $@
+	@$(CC) $^ $(DEPS) $(LDFLAGS) -o $@
 
-$(OBJECTS): | $(OBJDIR)/src/ $(OBJDIR)/http-parser/
+$(OBJECTS): $(DEPS) | $(OBJDIR)/src/ $(OBJDIR)/http-parser/
 
 $(OBJDIR)/%.o: %.c
 	@printf "\e[1;34m   CC\e[m $<\n"
@@ -44,12 +46,12 @@ $(OBJDIR)/%/: | $(OBJDIR)
 
 $(OBJDIR)/lib/libhiredis.a: | $(OBJDIR)
 	@printf "\e[1;35m MAKE\e[m $@\n"
-	@make -sC deps/hiredis -e PREFIX=$(realpath $(OBJDIR)) install >/dev/null
+	@$(MAKE) -sC deps/hiredis -e PREFIX=$(realpath $(OBJDIR)) install >/dev/null
 
 $(OBJDIR)/lib/libuv.a: deps/libuv/configure | $(OBJDIR)
 	@printf "\e[1;35m MAKE\e[m $@\n"
 	@cd deps/libuv && ./configure --prefix=$(realpath $(OBJDIR)) >/dev/null 2>&1
-	@make -sC deps/libuv install >/dev/null 2>&1
+	@$(MAKE) -sC deps/libuv install >/dev/null 2>&1
 
 deps/libuv/configure:
 	@printf "\e[1;36m  GEN\e[m $@\n"
