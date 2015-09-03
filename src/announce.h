@@ -7,7 +7,7 @@ typedef struct _ClientAnnounceData ClientAnnounceData;
 typedef enum   _AnnounceEvent AnnounceEvent;
 typedef enum   _AnnounceError AnnounceError;
 
-#include "../http-parser/http_parser.h"
+#include "CompactAddress.h"
 
 enum _AnnounceError {
 	AnnounceError_okay,
@@ -23,6 +23,7 @@ struct _ClientAnnounceData {
 	// and ip within RFC 1918/4007 limits.
 
 	char *id, *infoHash;
+	char compact[CompactAddress_Size];
 	// Will not serve more than 20 peers at a time anyway.
 	uint8_t  numwant;
 	// Currently unused.

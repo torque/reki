@@ -64,13 +64,13 @@ ClientAnnounceData *ClientAnnounceData_new( void ) {
 	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
 	announce->numwant = 20;
 	announce->event   = AnnounceEvent_none;
+	CompactAddress_init( announce->compact );
 	return announce;
 }
 
 void ClientAnnounceData_free( ClientAnnounceData *announce ) {
 	free( announce->infoHash );
 	free( announce->id );
-	free( announce->ip );
 	free( announce );
 }
 
