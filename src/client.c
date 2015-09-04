@@ -62,7 +62,7 @@ static void Client_replyDone( uv_write_t* reply, int status ) {
 	free( reply );
 }
 
-static void Client_reply( ClientConnection *client ) {
+void Client_reply( ClientConnection *client ) {
 	uv_write_t *reply = malloc( sizeof(*reply) );
 	reply->data = client;
 
@@ -72,7 +72,7 @@ static void Client_reply( ClientConnection *client ) {
 }
 
 #define ErrorFormat "d14:failure reason%lu:%se"
-static void Client_replyError( ClientConnection *client, const char *message, size_t messageLength ) {
+void Client_replyError( ClientConnection *client, const char *message, size_t messageLength ) {
 	// I wonder if snprintf is optimized to not eat up a whole bunch of
 	// time in the case that n is 0
 	int length = snprintf( NULL, 0, ErrorFormat, messageLength, message );
