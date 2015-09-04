@@ -139,19 +139,23 @@ void ClientAnnounceData_free( ClientAnnounceData *announce ) {
 	free( announce );
 }
 
+// These break with the naming convention to allow for some preprocessor
+// magic.
 enum _SeenFieldOffsets {
-	SeenFieldOffset_peerID    = 1 << 0,
-	SeenFieldOffset_infoHash  = 1 << 1,
+	SeenFieldOffset_peer_id   = 1 << 0,
+	SeenFieldOffset_info_hash = 1 << 1,
 	SeenFieldOffset_port      = 1 << 2,
 	SeenFieldOffset_event     = 1 << 3,
-	SeenFieldOffset_IP        = 1 << 4,
-	SeenFieldOffset_IPv4      = 1 << 5,
-	SeenFieldOffset_IPv6      = 1 << 6,
+	SeenFieldOffset_ip        = 1 << 4,
+	SeenFieldOffset_ipv4      = 1 << 5,
+	SeenFieldOffset_ipv6      = 1 << 6,
 	SeenFieldOffset_left      = 1 << 7,
-	SeenFieldOffset_required  = SeenFieldOffset_peerID | SeenFieldOffset_infoHash | SeenFieldOffset_port | SeenFieldOffset_left,
+	SeenFieldOffset_numwant   = 1 << 8,
+	SeenFieldOffset_required  = SeenFieldOffset_peer_id | SeenFieldOffset_info_hash | SeenFieldOffset_port | SeenFieldOffset_left,
 };
 
 #define CheckError( boolean, setError ) if ( boolean ) { setError; goto error; }
+#define CheckField( fieldName ) !(seenFields & SeenFieldOffset_##fieldName) && EqualLiteralLength( key, keyLength, #fieldName )
 
 AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, const char *query, size_t querySize ) {
 	int seenFields = 0;
@@ -172,38 +176,38 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 		ptrdiff_t keyLength = value - key - 1, valueLength = query - value + i;
 		dbg_info( "key: %.*s; value: %.*s", (int)keyLength, key, (int)valueLength, value );
 		// Compare keys to get values. This is not particularly elegant.
-		if ( !(seenFields & SeenFieldOffset_peerID) && EqualLiteralLength( key, keyLength, "peer_id" ) ) {
+		if ( CheckField( peer_id ) ) {
 			dbg_info( "peer_id: %.*s", (int)valueLength, value );
 			CheckError( decodeURLString( value, valueLength, &announce->id ) < 1, errorCode = AnnounceError_malformedID );
-			seenFields |= SeenFieldOffset_peerID;
+			seenFields |= SeenFieldOffset_peer_id;
 
-		} else if ( !(seenFields & SeenFieldOffset_infoHash) && EqualLiteralLength( key, keyLength, "info_hash" ) ) {
+		} else if ( CheckField( info_hash ) ) {
 			CheckError( decodeInfoHash( value, valueLength, &announce->infoHash ) < 1, errorCode = AnnounceError_malformedInfoHash );
 			dbg_info( "info_hash: %.*s", 40, announce->infoHash );
-			seenFields |= SeenFieldOffset_infoHash;
+			seenFields |= SeenFieldOffset_info_hash;
 
 		// The IP value in the request can allegedly be a DNS name,
 		// according to BEP3[1]. I don't know if any clients do this, but
 		// it's not currently supported.
 		// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
-		} else if ( !(seenFields & SeenFieldOffset_IP) && EqualLiteralLength( key, keyLength, "ip" ) ) {
+		} else if ( CheckField( ip ) ) {
 			char *ip;
 			CheckError( decodeURLString( value, valueLength, &ip ) < 1, errorCode = AnnounceError_malformedIP );
 			CheckError( CompactAddress_fromString( announce->compact, ip, NULL), errorCode = AnnounceError_malformedIP );
-			seenFields |= SeenFieldOffset_IP;
+			seenFields |= SeenFieldOffset_ip;
 
 		// Optional fields according to BEP7[1], I don't know if clients
 		// tend to send these or not. Not supported for now.
 		// [1]: http://bittorrent.org/beps/bep_0007.html#announce-parameter
-		} else if ( !(seenFields & SeenFieldOffset_IPv4) && EqualLiteralLength( key, keyLength, "ipv4" ) ) {
+		} else if ( CheckField( ipv4 ) ) {
 			CheckError( handleIPv4( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv4 );
-			seenFields |= SeenFieldOffset_IPv4;
+			seenFields |= SeenFieldOffset_ipv4;
 
-		} else if ( !(seenFields & SeenFieldOffset_IPv6) && EqualLiteralLength( key, keyLength, "ipv6" ) ) {
+		} else if ( CheckField( ipv6 ) ) {
 			CheckError( handleIPv6( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv6 );
-			seenFields |= SeenFieldOffset_IPv6;
+			seenFields |= SeenFieldOffset_ipv6;
 
-		} else if ( !(seenFields & SeenFieldOffset_port) && EqualLiteralLength( key, keyLength, "port" ) ) {
+		} else if ( CheckField( port ) ) {
 			dbg_info( "port: %.*s", (int)valueLength, value );
 			unsigned long port = strtoul( value, NULL, 10 );
 			dbg_info( "portlong: %lu", port );
@@ -211,12 +215,12 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 			CompactAddress_setPort( announce->compact, (uint16_t)port );
 			seenFields |= SeenFieldOffset_port;
 
-		} else if ( !(seenFields & SeenFieldOffset_left) && EqualLiteralLength( key, keyLength, "left" ) ) {
+		} else if ( CheckField( left ) ) {
 			dbg_info( "left: %.*s", (int)valueLength, value );
 			announce->left = strtoull( value, NULL, 10 );
 			seenFields |= SeenFieldOffset_left;
 
-		} else if ( !(seenFields & SeenFieldOffset_event) && EqualLiteralLength( key, keyLength, "event" ) ) {
+		} else if ( CheckField( event ) ) {
 			if ( EqualLiteralLength( value, valueLength, "started" ) )
 				announce->event = AnnounceEvent_start;
 			else if ( EqualLiteralLength( value, valueLength, "completed" ) )
@@ -229,6 +233,10 @@ AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, co
 				announce->event = AnnounceEvent_unknown;
 
 			seenFields |= SeenFieldOffset_event;
+		} else if ( CheckField( numwant ) ) {
+			unsigned long numwant = strtoul( value, NULL, 10 );
+			if ( numwant < 20 && numwant > 0 )
+				announce->numwant = numwant;
 		}
 	}
 	// According to BEP23, not supporting non-compact responses is
