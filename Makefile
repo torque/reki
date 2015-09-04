@@ -67,8 +67,8 @@ deps/libuv/autogen.sh: $(OBJDIR)/submodules
 deps/hiredis/Makefile: $(OBJDIR)/submodules
 
 $(OBJDIR)/submodules: | $(OBJDIR)
-	@echo GIT SUBMODUEL UPDATE
-	@git submodule update --init --recursive
+	@printf "\e[1;36mFETCH\e[m submodules\n"
+	@git submodule update --init --recursive >/dev/null 2>&1
 # a cheesy marker so this recipe doesn't run every single time.
 	@touch $(OBJDIR)/submodules
 
