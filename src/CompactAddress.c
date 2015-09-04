@@ -10,6 +10,27 @@ void CompactAddress_init( char *compact ) {
 	memset( compact, 0, CompactAddress_Size );
 }
 
+void CompactAddress_dump( char *compact ) {
+	if ( compact[0] & CompactAddress_IPv4Flag ) {
+#define dumb(x) (x)[0], (x)[1], (x)[2], (x)[3], ntohs( *(uint16_t*)(x + 4) )
+		dbg_info( "ipv4: %u.%u.%u.%u:%u", dumb( compact + CompactAddress_IPv4AddressOffset ) );
+#undef dumb
+	}
+	if ( compact[0] & CompactAddress_IPv6Flag ) {
+#define dumb(x) ntohs( *(uint16_t*)(x + 0) ), ntohs( *(uint16_t*)(x + 2) ), ntohs( *(uint16_t*)(x + 4) ), ntohs( *(uint16_t*)(x + 6) ), ntohs( *(uint16_t*)(x + 8) ), ntohs( *(uint16_t*)(x + 10) ), ntohs( *(uint16_t*)(x + 12) ), ntohs( *(uint16_t*)(x + 14) ), ntohs( *(uint16_t*)(x + 16) )
+		dbg_info( "ipv6: [%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X]:%u", dumb( compact + CompactAddress_IPv6AddressOffset ) );
+#undef dumb
+	}
+	if ( compact[0] & CompactAddress_IPv4Flag )
+		dbg_info( "CompactAddress_IPv4Flag set." );
+	if ( compact[0] & CompactAddress_IPv6Flag )
+		dbg_info( "CompactAddress_IPv6Flag set." );
+	if ( compact[0] & CompactAddress_IPv4PortFlag )
+		dbg_info( "CompactAddress_IPv4PortFlag set." );
+	if ( compact[0] & CompactAddress_IPv6PortFlag )
+		dbg_info( "CompactAddress_IPv6PortFlag set." );
+}
+
 CompactError CompactAddress_setPort( char *compact, uint16_t port ) {
 	port = htons( port );
 	if ( !(compact[0] & CompactAddress_IPv4PortFlag) )

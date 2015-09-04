@@ -133,7 +133,7 @@ static void Client_route( ClientConnection *client ) {
 				CompactAddress_fromSocket( announce->compact, &sock, false );
 			}
 		}
-		CompactAddress_debug( announce->compact );
+		CompactAddress_dump( announce->compact );
 		MemoryStore_processAnnounce( client->server->memStore, client );
 
 	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {

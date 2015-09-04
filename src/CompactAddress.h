@@ -37,6 +37,7 @@ enum _CompactError {
 };
 
 void CompactAddress_init( char *compact );
+void CompactAddress_dump( char *compact );
 CompactError CompactAddress_setPort( char *compact, uint16_t port );
 CompactError CompactAddress_fromString( char *compact, const char *address, const char *port );
 CompactError CompactAddress_fromSocket( char *compact, struct sockaddr_storage *socket, bool hasPort );
