@@ -7,6 +7,7 @@
 
 #include "MemoryStore.h"
 #include "StringBuffer.h"
+#include "CompactAddress.h"
 #include "dbg.h"
 
 struct _MemoryStore {
@@ -66,16 +67,28 @@ int MemoryStore_attachToLoop( MemoryStore *store, uv_loop_t *loop ) {
 #define ANNOUNCE_INTERVAL 1800
 #define DROP_COUNT 3
 
+// void MemoryStore_announceCleanup( )
+
 static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, void *voidReply, void *voidClient ) {
-	if ( !voidReply || !voidClient ) return;
+	dbg_info( "backendAnnounceResponse" );
+	if ( !voidReply || !voidClient ) {
+		log_err( "WHat?????" );
+		return;
+	}
 
 	redisReply *reply = voidReply;
 	ClientConnection *client = voidClient;
 	ClientAnnounceData *announce = client->request->announce;
-	if ( reply->type != REDIS_REPLY_ARRAY || reply->elements != 4 ) return;
+	if ( reply->type != REDIS_REPLY_ARRAY || reply->elements != 4 ) {
+		Client_replyError( client, "A database error occurred.", 26 );
+		return;
+	}
 
 	for ( int i = 0; i < reply->elements; i++ ) {
-		if ( reply->element[i]->type == REDIS_REPLY_ERROR ) return;
+		if ( reply->element[i]->type == REDIS_REPLY_ERROR ) {
+			Client_replyError( client, "A database error occurred.", 26 );
+			return;
+		}
 	}
 
 	// now that the error checking is out of the way, sort of, grab what
@@ -85,44 +98,64 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 	redisReply *seeds = reply->element[2],
 	           *peers = reply->element[3];
 
-	StringBuffer *bencodedResponse = StringBuffer_new( );
+	dbg_info( "s: %zu, p: %zu", seeds->elements, peers->elements );
+	StringBuffer *peerBuf  = StringBuffer_new( );
+	StringBuffer *peerBuf6 = StringBuffer_new( );
 	// I have no regrets about hardcoding most of the bencoding.
-	StringBuffer_sprintf( bencodedResponse, "d8:completei%llde10:incompletei%llde8:intervali%de5:peersl", seedCount, peerCount, ANNOUNCE_INTERVAL );
 	int i = 0;
+	while ( i < peers->elements && i < announce->numwant ) {
+		char *compact = peers->element[i]->str;
+		CompactAddress_dump( compact );
+		if ( compact[0] & CompactAddress_IPv4Flag ) {
+			StringBuffer_append( peerBuf, compact + CompactAddress_IPv4AddressOffset, CompactAddress_IPv4Size );
+		} else {//if ( announce->compact[0] & CompactAddress_IPv6Flag ) {
+			StringBuffer_append( peerBuf6, compact + CompactAddress_IPv6AddressOffset, CompactAddress_IPv6Size );
+		}
+		i++;
+	}
+
 	// don't give seeds to seeds.
 	if ( announce->left != 0) {
-		for ( ; i < seeds->elements && i < announce->numwant; i++ ) {
-			// memcpy( &dummy_peer, seeds->element[i]->str, seeds->element[i]->len);
-			// if (announce->compact == 0) {
-			// 	dynamic_string_append(concat_peers, dummy_peer.bencoded, dummy_peer.b_length);
-			// } else {
-				// StringBuffer_append( concat_peers, dummy_peer.compact, 6);
-			// }
+		int j = 0;
+		while ( j < seeds->elements && i < announce->numwant ) {
+			char *compact = seeds->element[j]->str;
+			CompactAddress_dump( compact );
+			if ( compact[0] & CompactAddress_IPv4Flag ) {
+				StringBuffer_append( peerBuf, compact + CompactAddress_IPv4AddressOffset, CompactAddress_IPv4Size );
+			} else {//if ( announce->compact[0] & CompactAddress_IPv6Flag ) {
+				StringBuffer_append( peerBuf6, compact + CompactAddress_IPv6AddressOffset, CompactAddress_IPv6Size );
+			}
+			j++;
+			i++;
 		}
 	}
 
-	for ( ; i < peers->elements && i < announce->numwant; i++ ) {
-		// memcpy(&dummy_peer, peers->element[i]->str, peers->element[i]->len);
-		// if (announce->compact == 0) {
-		// 	dynamic_string_append(concat_peers, dummy_peer.bencoded, dummy_peer.b_length);
-		// } else {
-			// StringBuffer_append( concat_peers, dummy_peer.compact, 6);
-		// }
-	}
+	StringBuffer *bencode = StringBuffer_new( );
+	StringBuffer_sprintf( bencode, "d8:completei%llde10:incompletei%llde8:intervali%de5:peers%lu:", seedCount, peerCount, ANNOUNCE_INTERVAL, peerBuf->size );
+	StringBuffer_join( bencode, peerBuf );
+	StringBuffer_sprintf( bencode, "6:peers6%lu:", peerBuf6->size );
+	StringBuffer_join( bencode, peerBuf6 );
+	StringBuffer_append( bencode, "e", 1 );
+	StringBuffer_free( peerBuf );
+	StringBuffer_free( peerBuf6 );
+
+	StringBuffer_sprintf( client->writeBuffer, "%d\r\n\r\n", bencode->size );
+	StringBuffer_join( client->writeBuffer, bencode );
+	StringBuffer_free( bencode );
 
 	redisAsyncCommand( context, NULL, NULL, "MULTI" );
 	// just run the remove events on a timer? no reason to call them every
 	// single announce or scrape.
-	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
-	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
+	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", client->server->memStore->namespace, announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
+	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", client->server->memStore->namespace, announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
 	if ( announce->left == 0 )
-		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:seeds %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, CompactAddress_Size );
+		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:seeds %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, (size_t)CompactAddress_Size );
 	else
-		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:peers %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, CompactAddress_Size );
+		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:peers %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, (size_t)CompactAddress_Size );
 	// no callback is necessary
 	redisAsyncCommand( context, NULL, NULL, "EXEC" );
 
-	// do reply
+	Client_reply( client );
 }
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client ) {
