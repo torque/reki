@@ -1,9 +1,15 @@
 TARGET  := reki
 OBJDIR  := build
+UNAME   := $(shell uname -s)
 
-CC      := gcc
+CC      := cc
 CFLAGS  := -Wall -std=c99 -I"$(OBJDIR)/include"
 LDFLAGS :=
+
+# libuv requires pthreads on Linux, and probably BSD, but not OSX.
+ifneq ($(UNAME), Darwin)
+LDFLAGS += -pthread
+endif
 # http://man7.org/linux/man-pages/man7/feature_test_macros.7.html
 DEFS    := -D_XOPEN_SOURCE=600
 
@@ -44,18 +50,27 @@ $(OBJDIR)/%/: | $(OBJDIR)
 	@printf "\e[1;33mMKDIR\e[m $@\n"
 	@mkdir -p $@
 
-$(OBJDIR)/lib/libhiredis.a: | $(OBJDIR)
+$(OBJDIR)/lib/libhiredis.a: deps/hiredis/Makefile
 	@printf "\e[1;35m MAKE\e[m $@\n"
 	@$(MAKE) -sC deps/hiredis -e PREFIX=$(realpath $(OBJDIR)) install >/dev/null
 
-$(OBJDIR)/lib/libuv.a: deps/libuv/configure | $(OBJDIR)
+$(OBJDIR)/lib/libuv.a: deps/libuv/configure
 	@printf "\e[1;35m MAKE\e[m $@\n"
 	@cd deps/libuv && ./configure --prefix=$(realpath $(OBJDIR)) >/dev/null 2>&1
 	@$(MAKE) -sC deps/libuv install >/dev/null 2>&1
 
-deps/libuv/configure:
+deps/libuv/configure: deps/libuv/autogen.sh
 	@printf "\e[1;36m  GEN\e[m $@\n"
 	@deps/libuv/autogen.sh >/dev/null 2>&1
+
+deps/libuv/autogen.sh: $(OBJDIR)/submodules
+deps/hiredis/Makefile: $(OBJDIR)/submodules
+
+$(OBJDIR)/submodules: | $(OBJDIR)
+	@echo GIT SUBMODUEL UPDATE
+	@git submodule update --init --recursive
+# a cheesy marker so this recipe doesn't run every single time.
+	@touch $(OBJDIR)/submodules
 
 clean-all: clean clean-deps
 	@printf "\e[1;31m   RM\e[m $(OBJDIR)\n"
