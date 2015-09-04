@@ -8,8 +8,8 @@
 	#define dbg_info( message, ... )
 	#define dbg_warn( message, ... )
 #else
-	#define dbg_info( message, ... ) fprintf( stderr, "\e[1;32m>>\e[m ( %s:%d )\e[1;m " message "\n", __FILE__, __LINE__, ##__VA_ARGS__ )
-	#define dbg_warn( message, ... ) fprintf( stderr, "\e[1;33m>>\e[m ( %s:%d )\e[1;m " message "\n", __FILE__, __LINE__, ##__VA_ARGS__ )
+	#define dbg_info( message, ... ) fprintf( stderr, "\e[1;32m>>\e[m ( %s:%d )\e[1;m " message "\e[m\n", __FILE__, __LINE__, ##__VA_ARGS__ )
+	#define dbg_warn( message, ... ) fprintf( stderr, "\e[1;33m>>\e[m ( %s:%d )\e[1;m " message "\e[m\n", __FILE__, __LINE__, ##__VA_ARGS__ )
 #endif
 
 #define log_info( message, ... ) fprintf( stderr, "\e[1;32m>>\e[m " message "\n", ##__VA_ARGS__ )
