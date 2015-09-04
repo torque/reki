@@ -72,7 +72,7 @@ void StringBuffer_safeSprintf( StringBuffer *buf, const char *format, ... ) {
 	int length = vsnprintf( NULL, 0, format, args );
 	va_end( args );
 
-	StringBuffer_grow( buf, length );
+	StringBuffer_grow( buf, buf->size + length );
 	int added = vsnprintf( buf->str + buf->size, length, format, args2 );
 	buf->size += added;
 	va_end( args2 );
