@@ -8,8 +8,6 @@
 
 void CompactAddress_init( char *compact ) {
 	memset( compact, 0, CompactAddress_Size );
-	memcpy( compact + CompactAddress_IPv4BencodeOffset,  "6:", 2 );
-	memcpy( compact + CompactAddress_IPv6BencodeOffset, "18:", 3 );
 }
 
 CompactError CompactAddress_setPort( char *compact, uint16_t port ) {
