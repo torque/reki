@@ -85,7 +85,7 @@ void Client_replyError( ClientConnection *client, const char *message, size_t me
 
 static void Client_route( ClientConnection *client ) {
 	const static char *okayRoute = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:";
-	const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:0\r\n\r\n";
+	const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:12\r\n\r\nGET WRECKED\n";
 
 	HttpParserInfo *parserInfo = client->parserInfo;
 
@@ -133,20 +133,18 @@ static void Client_route( ClientConnection *client ) {
 				CompactAddress_fromSocket( announce->compact, &sock, false );
 			}
 		}
+		CompactAddress_debug( announce->compact );
+		MemoryStore_processAnnounce( client->server->memStore, client );
 
 	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {
 		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
 		processScrape( query, querySize );
+		Client_replyError( client, "Scrape not supported.", 21);
 
 	} else {
 		StringBuffer_append( client->writeBuffer, invalidRoute, strlen( invalidRoute ) );
 		Client_reply( client );
-		return;
 	}
-
-	// MemoryStore_processAnnounce( client->server->memStore, client );
-	StringBuffer_append( client->writeBuffer, "3\r\n\r\nhi\n", 8 );
-	Client_reply( client );
 }
 
 static void Client_readRequest( uv_stream_t *clientConnection, ssize_t nread, const uv_buf_t *buf ) {
