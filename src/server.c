@@ -22,6 +22,7 @@ static void Server_newTCPConnection( uv_stream_t *server, int status ) {
 	client->handle->tcpHandle->data = client;
 
 	if ( uv_accept( server, client->handle->stream ) == 0 ) {
+		client->server = server->data;
 #if defined(CLIENTTIMEINFO)
 		client->startTime = uv_now( server->loop );
 #endif
