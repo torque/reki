@@ -101,7 +101,7 @@ static void Client_route( ClientConnection *client ) {
 		announce->score = uv_now( client->handle->stream->loop );
 		client->requestType = ClientRequest_announce;
 		client->request->announce = announce;
-		if ( ClientAnnounceData_parseURLQuery( announce, query, querySize ) ) {
+		if ( ClientAnnounceData_fromQuery( announce, query, querySize ) ) {
 			log_warn( "%s", announce->errorMessage );
 			Client_replyError( client, announce->errorMessage, strlen( announce->errorMessage ) );
 			return;

@@ -2,11 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <limits.h>
 
 #include "announce.h"
 #include "dbg.h"
 #include "macros.h"
+#include "URLCommon.h"
 
 const static char *AnnounceErrorStrings[] = {
 	"There was no error.",
@@ -21,47 +21,6 @@ const static char *AnnounceErrorStrings[] = {
 	"The request contained a malformed port.",
 	"The requested torrent does not exist."
 };
-
-static int decodeURLString( const char *input, size_t length, char **output ) {
-	// output is guaranteed to be the same size as the input or smaller.
-	int o = 0;
-	*output = malloc( (length + 1)*sizeof(**output) );
-	for ( int i = 0; (i < length) && (o < length); i++, o++ ) {
-		if ( input[i] == '%' ) {
-			if ( i + 2 > length )
-				return -1;
-			char encodedChar[3] = { input[i + 1], input[i + 2], '\0' };
-			long decodedChar = strtol( encodedChar, NULL, 16 );
-			if ( decodedChar < UCHAR_MAX )
-				(*output)[o] = (char)decodedChar;
-			else
-				return -2;
-			i += 2;
-		} else
-			(*output)[o] = input[i];
-	}
-	(*output)[o] = '\0';
-	return o;
-}
-
-static int decodeInfoHash( const char *input, size_t length, char **output ) {
-	// kind of janky to hardcode the length. note: since snprintf null
-	// terminates, output has to be an extra character in width to avoid
-	// an OOB write.
-	int o = 0;
-	*output = malloc( 41*sizeof(**output) );
-	for ( int i = 0; (i < length) && (o < 40); i++, o++ ) {
-		if ( input[i] == '%' ) {
-			if ( i + 2 > length )
-				return -1;
-			(*output)[o++] = tolower( input[++i] );
-			(*output)[o]   = tolower( input[++i] );
-		} else
-			snprintf( (*output) + o++, 3, "%02x", input[i] );
-	}
-	(*output)[o] = '\0';
-	return o;
-}
 
 static int handleIPv4( ClientAnnounceData *announce, const char *value, size_t valueLength ) {
 	char *ipv4;
@@ -125,14 +84,18 @@ static int handleIPv6( ClientAnnounceData *announce, const char *value, size_t v
 }
 
 ClientAnnounceData *ClientAnnounceData_new( void ) {
-	ClientAnnounceData *announce = calloc( 1, sizeof(*announce) );
+	ClientAnnounceData *announce = malloc( sizeof(*announce) );
 	announce->numwant = 20;
 	announce->event   = AnnounceEvent_none;
 	CompactAddress_init( announce->compact );
+	announce->seenFields = 0;
+	announce->infoHash = NULL;
+	announce->id = NULL;
 	return announce;
 }
 
 void ClientAnnounceData_free( ClientAnnounceData *announce ) {
+	if ( !announce ) return;
 	dbg_info( "ClientAnnounceData_free" );
 	free( announce->infoHash );
 	free( announce->id );
@@ -154,99 +117,93 @@ enum _SeenFieldOffsets {
 	SeenFieldOffset_required  = SeenFieldOffset_peer_id | SeenFieldOffset_info_hash | SeenFieldOffset_port | SeenFieldOffset_left,
 };
 
-#define CheckError( boolean, setError ) if ( boolean ) { setError; goto error; }
-#define CheckField( fieldName ) !(seenFields & SeenFieldOffset_##fieldName) && EqualLiteralLength( key, keyLength, #fieldName )
+#define CheckError( boolean, err ) if ( boolean ) { return err; }
+#define CheckField( fieldName ) !(announce->seenFields & SeenFieldOffset_##fieldName) && EqualLiteralLength( key, keyLength, #fieldName )
+static int ClientAnnounceData_parse( void *data, const char *key, size_t keyLength, const char *value, size_t valueLength ) {
+	ClientAnnounceData *announce = data;
 
-AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, const char *query, size_t querySize ) {
-	int seenFields = 0;
-	AnnounceError errorCode = AnnounceError_okay;
-	dbg_info( "Query: %.*s", (int)querySize, query );
-	for ( int i = 0; i < querySize; i++ ) {
-		char *key = (char *)(query + i), *value = key;
-		for ( ; i < querySize; i++ ) {
-			if ( query[i] == '=' ) {
-				value = (char*)(query + i + 1);
-			}
-			else if ( query[i] == '&' ) {
-				break;
-			}
-		}
-		CheckError( value == key || value - query > querySize, errorCode = AnnounceError_invalidRequest );
+	// Compare keys to get values. This is not particularly elegant.
+	if ( CheckField( peer_id ) ) {
+		dbg_info( "peer_id: %.*s", (int)valueLength, value );
+		CheckError( decodeURLString( value, valueLength, &announce->id ) < 1, AnnounceError_malformedID );
+		announce->seenFields |= SeenFieldOffset_peer_id;
 
-		ptrdiff_t keyLength = value - key - 1, valueLength = query - value + i;
-		dbg_info( "key: %.*s; value: %.*s", (int)keyLength, key, (int)valueLength, value );
-		// Compare keys to get values. This is not particularly elegant.
-		if ( CheckField( peer_id ) ) {
-			dbg_info( "peer_id: %.*s", (int)valueLength, value );
-			CheckError( decodeURLString( value, valueLength, &announce->id ) < 1, errorCode = AnnounceError_malformedID );
-			seenFields |= SeenFieldOffset_peer_id;
+	} else if ( CheckField( info_hash ) ) {
+		announce->infoHash = malloc( 41 * sizeof(*announce->infoHash) );
+		CheckError( decodeInfoHash( value, valueLength, announce->infoHash ) != 40, AnnounceError_malformedInfoHash );
+		dbg_info( "info_hash: %.*s", 40, announce->infoHash );
+		announce->seenFields |= SeenFieldOffset_info_hash;
 
-		} else if ( CheckField( info_hash ) ) {
-			CheckError( decodeInfoHash( value, valueLength, &announce->infoHash ) < 1, errorCode = AnnounceError_malformedInfoHash );
-			dbg_info( "info_hash: %.*s", 40, announce->infoHash );
-			seenFields |= SeenFieldOffset_info_hash;
+	// The IP value in the request can allegedly be a DNS name,
+	// according to BEP3[1]. I don't know if any clients do this, but
+	// it's not currently supported.
+	// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
+	} else if ( CheckField( ip ) ) {
+		char *ip;
+		CheckError( decodeURLString( value, valueLength, &ip ) < 1, AnnounceError_malformedIP );
+		CheckError( CompactAddress_fromString( announce->compact, ip, NULL), AnnounceError_malformedIP );
+		announce->seenFields |= SeenFieldOffset_ip;
 
-		// The IP value in the request can allegedly be a DNS name,
-		// according to BEP3[1]. I don't know if any clients do this, but
-		// it's not currently supported.
-		// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
-		} else if ( CheckField( ip ) ) {
-			char *ip;
-			CheckError( decodeURLString( value, valueLength, &ip ) < 1, errorCode = AnnounceError_malformedIP );
-			CheckError( CompactAddress_fromString( announce->compact, ip, NULL), errorCode = AnnounceError_malformedIP );
-			seenFields |= SeenFieldOffset_ip;
+	// Optional fields according to BEP7[1], I don't know if clients
+	// tend to send these or not. Not supported for now.
+	// [1]: http://bittorrent.org/beps/bep_0007.html#announce-parameter
+	} else if ( CheckField( ipv4 ) ) {
+		CheckError( handleIPv4( announce, value, valueLength ), AnnounceError_malformedIPv4 );
+		announce->seenFields |= SeenFieldOffset_ipv4;
 
-		// Optional fields according to BEP7[1], I don't know if clients
-		// tend to send these or not. Not supported for now.
-		// [1]: http://bittorrent.org/beps/bep_0007.html#announce-parameter
-		} else if ( CheckField( ipv4 ) ) {
-			CheckError( handleIPv4( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv4 );
-			seenFields |= SeenFieldOffset_ipv4;
+	} else if ( CheckField( ipv6 ) ) {
+		CheckError( handleIPv6( announce, value, valueLength ), AnnounceError_malformedIPv6 );
+		announce->seenFields |= SeenFieldOffset_ipv6;
 
-		} else if ( CheckField( ipv6 ) ) {
-			CheckError( handleIPv6( announce, value, valueLength ), errorCode = AnnounceError_malformedIPv6 );
-			seenFields |= SeenFieldOffset_ipv6;
+	} else if ( CheckField( port ) ) {
+		dbg_info( "port: %.*s", (int)valueLength, value );
+		unsigned long port = strtoul( value, NULL, 10 );
+		dbg_info( "portlong: %lu", port );
+		CheckError( (port < 1) || (port > 65535), AnnounceError_malformedPort );
+		CompactAddress_setPort( announce->compact, (uint16_t)port );
+		announce->seenFields |= SeenFieldOffset_port;
 
-		} else if ( CheckField( port ) ) {
-			dbg_info( "port: %.*s", (int)valueLength, value );
-			unsigned long port = strtoul( value, NULL, 10 );
-			dbg_info( "portlong: %lu", port );
-			CheckError( (port < 1) || (port > 65535), errorCode = AnnounceError_malformedPort );
-			CompactAddress_setPort( announce->compact, (uint16_t)port );
-			seenFields |= SeenFieldOffset_port;
+	} else if ( CheckField( left ) ) {
+		dbg_info( "left: %.*s", (int)valueLength, value );
+		announce->left = strtoull( value, NULL, 10 );
+		announce->seenFields |= SeenFieldOffset_left;
 
-		} else if ( CheckField( left ) ) {
-			dbg_info( "left: %.*s", (int)valueLength, value );
-			announce->left = strtoull( value, NULL, 10 );
-			seenFields |= SeenFieldOffset_left;
+	} else if ( CheckField( event ) ) {
+		if ( EqualLiteralLength( value, valueLength, "started" ) )
+			announce->event = AnnounceEvent_start;
+		else if ( EqualLiteralLength( value, valueLength, "completed" ) )
+			announce->event = AnnounceEvent_complete;
+		else if ( EqualLiteralLength( value, valueLength, "stopped" ) ) {
+			announce->event = AnnounceEvent_stop;
+			// just hang up.
+			return AnnounceError_okay;
+		} else
+			announce->event = AnnounceEvent_unknown;
 
-		} else if ( CheckField( event ) ) {
-			if ( EqualLiteralLength( value, valueLength, "started" ) )
-				announce->event = AnnounceEvent_start;
-			else if ( EqualLiteralLength( value, valueLength, "completed" ) )
-				announce->event = AnnounceEvent_complete;
-			else if ( EqualLiteralLength( value, valueLength, "stopped" ) ) {
-				announce->event = AnnounceEvent_stop;
-				// just hang up.
-				return AnnounceError_okay;
-			} else
-				announce->event = AnnounceEvent_unknown;
+		announce->seenFields |= SeenFieldOffset_event;
 
-			seenFields |= SeenFieldOffset_event;
-		} else if ( CheckField( numwant ) ) {
-			unsigned long numwant = strtoul( value, NULL, 10 );
-			if ( numwant < 20 && numwant > 0 )
-				announce->numwant = numwant;
-		}
+	} else if ( CheckField( numwant ) ) {
+		unsigned long numwant = strtoul( value, NULL, 10 );
+		if ( numwant < 20 && numwant > 0 )
+			announce->numwant = numwant;
+
+		announce->seenFields |= SeenFieldOffset_numwant;
 	}
-	// According to BEP23, not supporting non-compact responses is
-	// allowed: http://bittorrent.org/beps/bep_0023.html
-
-	CheckError( (seenFields & SeenFieldOffset_required) != SeenFieldOffset_required, errorCode = AnnounceError_missingField );
 
 	return AnnounceError_okay;
+}
 
-error:
-	announce->errorMessage = AnnounceErrorStrings[errorCode];
-	return errorCode;
+AnnounceError ClientAnnounceData_fromQuery( ClientAnnounceData *announce, const char *query, size_t queryLength ) {
+	int e = parseQueryString( query, queryLength, ClientAnnounceData_parse, announce );
+	if ( e ) {
+		announce->errorMessage = AnnounceErrorStrings[e];
+		return e;
+	}
+
+	if ( (announce->seenFields & SeenFieldOffset_required) != SeenFieldOffset_required ) {
+		announce->errorMessage = AnnounceErrorStrings[AnnounceError_missingField];
+		return AnnounceError_missingField;
+	}
+
+	return AnnounceError_okay;
 }

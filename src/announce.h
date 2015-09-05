@@ -36,6 +36,8 @@ struct _ClientAnnounceData {
 	uint64_t uploaded, downloaded, left;
 	// score to sort by in the ordered set.
 	uint64_t score;
+	// error handling.
+	int seenFields;
 
 	enum _AnnounceEvent {
 		AnnounceEvent_none,
@@ -51,4 +53,4 @@ struct _ClientAnnounceData {
 const char *AnnounceErrorMessage( AnnounceError error );
 ClientAnnounceData *ClientAnnounceData_new( void );
 void ClientAnnounceData_free( ClientAnnounceData *announce );
-AnnounceError ClientAnnounceData_parseURLQuery( ClientAnnounceData *announce, const char *query, size_t querySize );
+AnnounceError ClientAnnounceData_fromQuery( ClientAnnounceData *announce, const char *query, size_t queryLength );
