@@ -142,17 +142,10 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 	StringBuffer_join( client->writeBuffer, bencode );
 	StringBuffer_free( bencode );
 
-	redisAsyncCommand( context, NULL, NULL, "MULTI" );
-	// just run the remove events on a timer? no reason to call them every
-	// single announce or scrape.
-	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", client->server->memStore->namespace, announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
-	redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", client->server->memStore->namespace, announce->infoHash, announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000 );
 	if ( announce->left == 0 )
 		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:seeds %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, (size_t)CompactAddress_Size );
 	else
 		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:peers %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, (size_t)CompactAddress_Size );
-	// no callback is necessary
-	redisAsyncCommand( context, NULL, NULL, "EXEC" );
 
 	Client_reply( client );
 }

@@ -23,8 +23,10 @@ void Client_free( ClientConnection *client ) {
 			break;
 		}
 
-		case ClientRequest_scrape:
+		case ClientRequest_scrape: {
+			ScrapeData_free( client->request.scrape );
 			break;
+		}
 	}
 	StringBuffer_free( client->readBuffer  );
 	StringBuffer_free( client->writeBuffer );
@@ -134,7 +136,10 @@ static void Client_route( ClientConnection *client ) {
 
 	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {
 		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
-		processScrape( query, querySize );
+		ScrapeData *scrape = ScrapeData_new( );
+		client->requestType = ClientRequest_scrape;
+		client->request.scrape = scrape;
+		ScrapeData_fromQuery( scrape, query, querySize );
 		Client_replyError( client, "Scrape not supported.", 21);
 
 	} else {

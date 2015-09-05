@@ -12,6 +12,7 @@ typedef enum   _ClientRequestType ClientRequestType;
 #include "StringBuffer.h"
 #include "RequestParser.h"
 #include "announce.h"
+#include "Scrape.h"
 
 struct _ClientConnection {
 	ServerHandle handle;
@@ -22,7 +23,7 @@ struct _ClientConnection {
 
 	union _ClientRequestData {
 		ClientAnnounceData *announce;
-		ClientScrapeData *scrape;
+		ScrapeData *scrape;
 	} request;
 
 	enum _ClientRequestType {
