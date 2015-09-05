@@ -9,6 +9,15 @@
 #include "client.h"
 #include "dbg.h"
 
+Server *Server_new( const char *bindIP, const char *port, ServerProtocol type ) {
+	Server *newServer = calloc( 1, sizeof(*newServer) );
+	newServer->bindIP = strdup( bindIP );
+	newServer->bindPort = strdup( port );
+	newServer->protocol = type;
+
+	return newServer;
+}
+
 static void Server_newTCPConnection( uv_stream_t *server, int status ) {
 	if ( status < 0 ) {
 		log_warn( "Connection error: %s", uv_err_name( status ) );
@@ -17,11 +26,11 @@ static void Server_newTCPConnection( uv_stream_t *server, int status ) {
 	dbg_info( "Connection received." );
 
 	ClientConnection *client = Client_new( );
-	client->handle->tcpHandle = malloc( sizeof(*client->handle->tcpHandle) );
-	uv_tcp_init( server->loop, client->handle->tcpHandle );
-	client->handle->tcpHandle->data = client;
+	client->handle.tcpHandle = malloc( sizeof(*client->handle.tcpHandle) );
+	uv_tcp_init( server->loop, client->handle.tcpHandle );
+	client->handle.tcpHandle->data = client;
 
-	if ( uv_accept( server, client->handle->stream ) == 0 ) {
+	if ( uv_accept( server, client->handle.stream ) == 0 ) {
 		client->server = server->data;
 #if defined(CLIENTTIMEINFO)
 		client->startTime = uv_now( server->loop );
@@ -49,26 +58,16 @@ static int Server_AddressInfo( Server *server, struct sockaddr_storage *outAddre
 	return 0;
 }
 
-Server *Server_new( const char *bindIP, const char *port, ServerProtocol type ) {
-	Server *newServer = calloc( 1, sizeof(*newServer) );
-	newServer->bindIP = strdup( bindIP );
-	newServer->bindPort = strdup( port );
-	newServer->protocol = type;
-	newServer->handle = calloc( 1, sizeof(*newServer->handle) );
-
-	return newServer;
-}
-
 int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
 	switch ( server->protocol ) {
 		case ServerProtocol_TCP: {
-			server->handle->tcpHandle = malloc( sizeof(*server->handle->tcpHandle) );
-			checkFunction( uv_tcp_init( loop, server->handle->tcpHandle ) );
+			server->handle.tcpHandle = malloc( sizeof(*server->handle.tcpHandle) );
+			checkFunction( uv_tcp_init( loop, server->handle.tcpHandle ) );
 			break;
 		}
 		case ServerProtocol_UDP: {
-			server->handle->udpHandle = malloc( sizeof(*server->handle->udpHandle) );
-			checkFunction( uv_udp_init( loop, server->handle->udpHandle ) );
+			server->handle.udpHandle = malloc( sizeof(*server->handle.udpHandle) );
+			checkFunction( uv_udp_init( loop, server->handle.udpHandle ) );
 			break;
 		}
 		default: {
@@ -77,7 +76,7 @@ int Server_initWithLoop( Server *server, uv_loop_t *loop ) {
 		}
 	}
 
-	server->handle->stream->data = server;
+	server->handle.stream->data = server;
 	return 0;
 }
 
@@ -92,11 +91,11 @@ int Server_listen( Server *server ) {
 
 	switch ( server->protocol ) {
 		case ServerProtocol_TCP: {
-			checkFunction( uv_tcp_bind( server->handle->tcpHandle, (struct sockaddr*)&address, flags ) );
+			checkFunction( uv_tcp_bind( server->handle.tcpHandle, (struct sockaddr*)&address, flags ) );
 			break;
 		}
 		case ServerProtocol_UDP: {
-			checkFunction( uv_udp_bind( server->handle->udpHandle, (struct sockaddr*)&address, flags ) );
+			checkFunction( uv_udp_bind( server->handle.udpHandle, (struct sockaddr*)&address, flags ) );
 			log_err( "UDP actually isn't supported yet." );
 			return 1;
 			// break;
@@ -107,8 +106,8 @@ int Server_listen( Server *server ) {
 		}
 	}
 
-	// e = uv_udp_recv_start( server->handle->udpHandle, allocCB, readCB );
-	checkFunction( uv_listen( server->handle->stream, 128, Server_newTCPConnection ) );
+	// e = uv_udp_recv_start( server->handle.udpHandle, allocCB, readCB );
+	checkFunction( uv_listen( server->handle.stream, 128, Server_newTCPConnection ) );
 
 	char namebuf[INET6_ADDRSTRLEN];
 	checkFunction( getnameinfo( (struct sockaddr *)&address, sizeof(address), namebuf, sizeof(namebuf), NULL, 0, NI_NUMERICHOST ) );

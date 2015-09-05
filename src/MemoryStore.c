@@ -67,8 +67,6 @@ int MemoryStore_attachToLoop( MemoryStore *store, uv_loop_t *loop ) {
 #define ANNOUNCE_INTERVAL 1800
 #define DROP_COUNT 3
 
-// void MemoryStore_announceCleanup( )
-
 static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, void *voidReply, void *voidClient ) {
 	dbg_info( "backendAnnounceResponse" );
 	if ( !voidReply || !voidClient ) {
@@ -78,7 +76,7 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 
 	redisReply *reply = voidReply;
 	ClientConnection *client = voidClient;
-	ClientAnnounceData *announce = client->request->announce;
+	ClientAnnounceData *announce = client->request.announce;
 	if ( reply->type != REDIS_REPLY_ARRAY || reply->elements != 4 ) {
 		Client_replyError( client, "A database error occurred.", 26 );
 		return;
@@ -101,7 +99,6 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 	dbg_info( "s: %zu, p: %zu", seeds->elements, peers->elements );
 	StringBuffer *peerBuf  = StringBuffer_new( );
 	StringBuffer *peerBuf6 = StringBuffer_new( );
-	// I have no regrets about hardcoding most of the bencoding.
 	int i = 0;
 	while ( i < peers->elements && i < announce->numwant ) {
 		char *compact = peers->element[i]->str;
@@ -130,6 +127,8 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 		}
 	}
 
+	// According to BEP23, not supporting non-compact responses is
+	// allowed: http://bittorrent.org/beps/bep_0023.html
 	StringBuffer *bencode = StringBuffer_new( );
 	StringBuffer_sprintf( bencode, "d8:completei%llde10:incompletei%llde8:intervali%de5:peers%lu:", seedCount, peerCount, ANNOUNCE_INTERVAL, peerBuf->size );
 	StringBuffer_join( bencode, peerBuf );
@@ -159,7 +158,7 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 }
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client ) {
-	ClientAnnounceData *announce = client->request->announce;
+	ClientAnnounceData *announce = client->request.announce;
 	// uint64_t now  = uv_now( client->handle->stream->loop );
 	uint64_t then = announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
 	redisAsyncCommand( store->context, NULL, NULL, "MULTI" );
