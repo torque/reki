@@ -8,6 +8,8 @@
 #include "MemoryStore.h"
 #include "StringBuffer.h"
 #include "CompactAddress.h"
+#include "announce.h"
+#include "Scrape.h"
 #include "dbg.h"
 
 struct _MemoryStore {
@@ -208,15 +210,49 @@ void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client )
 	redisAsyncCommand( store->context, MemoryStore_backendAnnounceResponse, client, "EXEC" );
 }
 
-int MemoryStore_fetchRequestData( MemoryStore *store, ClientConnection *client ) {
-	switch ( client->requestType ) {
-		case ClientRequest_announce: {
-			MemoryStore_processAnnounce( store, client );
-			break;
-		}
-		case ClientRequest_scrape: {
-			break;
-		}
+static void MemoryStore_backendScrapeResponse( redisAsyncContext *context, void *voidReply, void *voidClient ) {
+	dbg_info( "backendScrapeResponse" );
+	if ( !voidReply || !voidClient ) {
+		log_err( "What2???" );
+		return;
 	}
-	return 0;
+
+	redisReply *reply = voidReply;
+	ClientConnection *client = voidClient;
+	if ( reply->type != REDIS_REPLY_ARRAY ) {
+		Client_replyErrorLen( client, "A database error occurred." );
+		return;
+	}
+
+	ScrapeData *scrape = client->request.scrape;
+	StringBuffer *bencode  = StringBuffer_new( );
+	StringBuffer_sprintf( bencode, "d5:filesd" );
+	for ( int i = 0; i < reply->elements; i += 2, scrape = scrape->next ) {
+		if ( reply->element[i]->type == REDIS_REPLY_ERROR || reply->element[i+1]->type == REDIS_REPLY_ERROR ) {
+			Client_replyErrorLen( client, "A database error occurred." );
+			return;
+		}
+		long long complete   = reply->element[i]->integer;
+		long long incomplete = reply->element[i+1]->integer;
+		StringBuffer_append( bencode, "20:", 4 );
+		StringBuffer_append( bencode, scrape->compactHash, 20 );
+		StringBuffer_sprintf( bencode, "d8:completei%llde10:downloadedi0e10:incompletei%lldee", complete, incomplete );
+	}
+
+	StringBuffer_append( bencode, "ee", 2 );
+	StringBuffer_sprintf( client->writeBuffer, "%d\r\n\r\n", bencode->size );
+	StringBuffer_join( client->writeBuffer, bencode );
+	StringBuffer_free( bencode );
+	Client_reply( client );
+}
+
+void MemoryStore_processScrape( MemoryStore *store, ClientConnection *client ) {
+	ScrapeData *scrape = client->request.scrape;
+	redisAsyncCommand( store->context, NULL, NULL, "MULTI" );
+	while ( scrape ) {
+		redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:seeds", store->namespace, scrape->infoHash );
+		redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:peers", store->namespace, scrape->infoHash );
+		scrape = scrape->next;
+	}
+	redisAsyncCommand( store->context, MemoryStore_backendScrapeResponse, client, "EXEC" );
 }

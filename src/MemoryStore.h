@@ -11,3 +11,4 @@ int  MemoryStore_attachToLoop( MemoryStore *store, uv_loop_t *loop );
 int  MemoryStore_disconnect( MemoryStore *store );
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client );
+void MemoryStore_processScrape( MemoryStore *store, ClientConnection *client );

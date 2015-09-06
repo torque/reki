@@ -4,7 +4,8 @@ typedef struct _ScrapeData ScrapeData;
 typedef enum _ScrapeError ScrapeError;
 
 struct _ScrapeData {
-	char infoHash[40];
+	char infoHash[41];
+	char compactHash[20];
 	ScrapeData *next;
 };
 

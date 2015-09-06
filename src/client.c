@@ -137,8 +137,11 @@ static void Client_route( ClientConnection *client ) {
 		ScrapeData *scrape = ScrapeData_new( );
 		client->requestType = ClientRequest_scrape;
 		client->request.scrape = scrape;
-		ScrapeData_fromQuery( scrape, query, querySize );
-		Client_replyError( client, "Scrape not supported.", 21);
+		if ( ScrapeData_fromQuery( scrape, query, querySize ) ) {
+			Client_replyErrorLen( client, "Invalid scrape request." );
+			return;
+		}
+		MemoryStore_processScrape( client->server->memStore, client );
 
 	} else {
 		StringBuffer_append( client->writeBuffer, InvalidRoute, strlen( InvalidRoute ) );
