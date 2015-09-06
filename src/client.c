@@ -79,11 +79,9 @@ void Client_replyError( ClientConnection *client, const char *message, size_t me
 }
 #undef ErrorFormat
 
-#define processScrape( a, b ) dbg_info( "scraping" )
-
 static void Client_route( ClientConnection *client ) {
-	const static char *okayRoute = "HTTP/1.0 200 OK\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:";
-	const static char *invalidRoute = "HTTP/1.0 403 Forbidden\r\nContent-Type: text/text\r\nConnection: close\r\nContent-Length:12\r\n\r\nGET WRECKED\n";
+	#define OkayRoute "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length:"
+	#define InvalidRoute "HTTP/1.0 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length:12\r\n\r\nGET WRECKED\n"
 
 	HttpParserInfo *parserInfo = client->parserInfo;
 
@@ -94,7 +92,7 @@ static void Client_route( ClientConnection *client ) {
 	dbg_info( "Requested path: %.*s", (int)pathSize, path );
 	dbg_info( "Request query: %.*s", (int)querySize, query );
 	if ( EqualLiteralLength( path, pathSize, "/announce" ) ) {
-		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
+		StringBuffer_append( client->writeBuffer, OkayRoute, strlen( OkayRoute ) );
 		ClientAnnounceData *announce = ClientAnnounceData_new( );
 		announce->score = uv_now( client->handle.stream->loop );
 		client->requestType = ClientRequest_announce;
@@ -135,7 +133,7 @@ static void Client_route( ClientConnection *client ) {
 		MemoryStore_processAnnounce( client->server->memStore, client );
 
 	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {
-		StringBuffer_append( client->writeBuffer, okayRoute, strlen( okayRoute ) );
+		StringBuffer_append( client->writeBuffer, OkayRoute, strlen( OkayRoute ) );
 		ScrapeData *scrape = ScrapeData_new( );
 		client->requestType = ClientRequest_scrape;
 		client->request.scrape = scrape;
@@ -143,9 +141,11 @@ static void Client_route( ClientConnection *client ) {
 		Client_replyError( client, "Scrape not supported.", 21);
 
 	} else {
-		StringBuffer_append( client->writeBuffer, invalidRoute, strlen( invalidRoute ) );
+		StringBuffer_append( client->writeBuffer, InvalidRoute, strlen( InvalidRoute ) );
 		Client_reply( client );
 	}
+	#undef OkayRoute
+	#undef InvalidRoute
 }
 
 static void Client_readRequest( uv_stream_t *clientConnection, ssize_t nread, const uv_buf_t *buf ) {
