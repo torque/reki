@@ -99,7 +99,7 @@ static void Client_route( ClientConnection *client ) {
 		client->request.announce = announce;
 		if ( ClientAnnounceData_fromQuery( announce, query, querySize ) ) {
 			log_warn( "%s", announce->errorMessage );
-			Client_replyError( client, announce->errorMessage, strlen( announce->errorMessage ) );
+			Client_replyErrorLen( client, announce->errorMessage );
 			return;
 		}
 
@@ -122,7 +122,7 @@ static void Client_route( ClientConnection *client ) {
 				int len = sizeof(sock);
 				int e = uv_tcp_getpeername( client->handle.tcpHandle, (struct sockaddr*)&sock, &len );
 				if ( e ) {
-					Client_replyError( client, "IP could not be determined.", 27 );
+					Client_replyErrorLen( client, "IP could not be determined." );
 					return;
 				}
 

@@ -40,5 +40,6 @@ ClientConnection *Client_new( void );
 void Client_free( ClientConnection *client );
 void Client_handleConnection( ClientConnection *client );
 void Client_reply( ClientConnection *client );
+#define Client_replyErrorLen( client, message ) Client_replyError( client, message, strlen(message) )
 void Client_replyError( ClientConnection *client, const char *message, size_t messageLength );
 void Client_terminate( ClientConnection *client );
