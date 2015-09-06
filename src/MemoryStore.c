@@ -12,7 +12,9 @@
 
 struct _MemoryStore {
 	redisAsyncContext *context;
+	uv_timer_t *timer;
 	char *namespace;
+	uint64_t cleanupTime;
 };
 
 static void redisConnectCb( const redisAsyncContext *redis, int status ) {
@@ -32,13 +34,16 @@ static void redisDisconnectCb( const redisAsyncContext *redis, int status ) {
 }
 
 MemoryStore *MemoryStore_new( const char *namespace ) {
-	MemoryStore *store = calloc( 1, sizeof(*store) );
+	MemoryStore *store = malloc( sizeof(*store) );
 	store->namespace = strdup( namespace );
+	store->timer = malloc( sizeof(*store->timer) );
+	store->timer->data = store;
 	return store;
 }
 
 void MemoryStore_free( MemoryStore *store ) {
 	free( store->namespace );
+	free( store->timer );
 	free( store );
 }
 
@@ -56,16 +61,52 @@ int MemoryStore_disconnect( MemoryStore *store ) {
 	return 0;
 }
 
+// 30 mins
+#define AnnounceInterval 1800
+#define DropCount 3
+#define DropIntervalMS (AnnounceInterval * DropCount * 1000)
+static void MemoryStore_cleanPeersTimer( uv_timer_t *timer );
+
 int MemoryStore_attachToLoop( MemoryStore *store, uv_loop_t *loop ) {
 	redisLibuvAttach( store->context, loop );
 	redisAsyncSetConnectCallback( store->context, redisConnectCb );
 	redisAsyncSetDisconnectCallback( store->context, redisDisconnectCb );
+	uv_timer_init( loop, store->timer );
+	uv_timer_start( store->timer, MemoryStore_cleanPeersTimer, DropIntervalMS, DropIntervalMS );
 	return 0;
 }
 
-// 30 mins
-#define ANNOUNCE_INTERVAL 1800
-#define DROP_COUNT 3
+// This, fairly obviously, does not scale well to millions of torrents.
+// However, purging the seeds/peers on every single announce/scrape
+// obviously didn't scale to millions of peers either, and since a
+// single torrent is more than likely to have multiple peers, this
+// presumably chews up a lot less cycles overall. The tradeoff is one
+// big chugging cleanup task, that could potentially stall redis, cause
+// huge memory spikes, etc. A better solution might consist of
+// splitting up the torrent index across several fixed-size keys, and
+// staggering the cleanup tasks across those. An alternate option would
+// be to use SSCAN to iterate over the keys in the set in fixed-size
+// chunks.
+static void MemoryStore_cleanPeers( redisAsyncContext *context, void *voidReply, void *voidStore ) {
+	dbg_info( "cleanPeers" );
+	redisReply *reply = voidReply;
+	if ( reply->elements == 0 ) return;
+	MemoryStore *store = voidStore;
+	uint64_t then = store->cleanupTime - DropIntervalMS;
+	redisAsyncCommand( context, NULL, NULL, "MULTI" );
+	for ( int i = 0; i < reply->elements; i++ ) {
+		const char *infoHash = reply->element[i]->str;
+		redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", store->namespace, infoHash, then );
+		redisAsyncCommand( context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", store->namespace, infoHash, then );
+	}
+	redisAsyncCommand( context, NULL, NULL, "EXEC" );
+}
+
+static void MemoryStore_cleanPeersTimer( uv_timer_t *timer ) {
+	MemoryStore *store = timer->data;
+	store->cleanupTime = uv_now( timer->loop );
+	redisAsyncCommand( store->context, MemoryStore_cleanPeers, store, "SMEMBERS %s:torrents", store->namespace );
+}
 
 static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, void *voidReply, void *voidClient ) {
 	dbg_info( "backendAnnounceResponse" );
@@ -127,10 +168,10 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 		}
 	}
 
-	// According to BEP23, not supporting non-compact responses is
-	// allowed: http://bittorrent.org/beps/bep_0023.html
+	// According to BEP23, only supporting compact responses is allowed:
+	// http://bittorrent.org/beps/bep_0023.html
 	StringBuffer *bencode = StringBuffer_new( );
-	StringBuffer_sprintf( bencode, "d8:completei%llde10:incompletei%llde8:intervali%de5:peers%lu:", seedCount, peerCount, ANNOUNCE_INTERVAL, peerBuf->size );
+	StringBuffer_sprintf( bencode, "d8:completei%llde10:incompletei%llde8:intervali%de5:peers%lu:", seedCount, peerCount, AnnounceInterval, peerBuf->size );
 	StringBuffer_join( bencode, peerBuf );
 	StringBuffer_sprintf( bencode, "6:peers6%lu:", peerBuf6->size );
 	StringBuffer_join( bencode, peerBuf6 );
@@ -152,27 +193,17 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client ) {
 	ClientAnnounceData *announce = client->request.announce;
-	// uint64_t now  = uv_now( client->handle->stream->loop );
-	uint64_t then = announce->score - ANNOUNCE_INTERVAL * DROP_COUNT * 1000;
+	uint64_t then = announce->score - DropIntervalMS;
 	redisAsyncCommand( store->context, NULL, NULL, "MULTI" );
-	// prune out old entries (peers that haven't announced within DROP_COUNT announce intervals)
-	// redisAsyncCommand( store->context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:seeds 0 %llu", announce->infoHash, then );
-	// redisAsyncCommand( store->context, NULL, NULL, "ZREMRANGEBYSCORE %s:%s:peers 0 %llu", announce->infoHash, then );
 
 	// Used for complete and incomplete fields in response. May be a bit
-	// inaccurate, since old peer pruning is saved until after the
-	// response to reduce reply latency. I doubt this is really a problem.
+	// inaccurate, since old peer pruning is run in its own separate loop.
+	// I doubt this is really a problem.
 	redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:seeds", store->namespace, announce->infoHash );
 	redisAsyncCommand( store->context, NULL, NULL, "ZCARD %s:%s:peers", store->namespace, announce->infoHash );
 
 	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:seeds %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, announce->score, then, announce->numwant );
 	redisAsyncCommand( store->context, NULL, NULL, "ZREVRANGEBYSCORE %s:%s:peers %llu %llu LIMIT 0 %d", store->namespace, announce->infoHash, announce->score, then, announce->numwant );
-
-	// do this at the same time as the old peer pruning.
-	// if ( announce_data->left == 0 )
-	// 	redisAsyncCommand( store->context, NULL, NULL, "ZADD %s:%s:seeds:compact %llu %b", store->namespace, announce->infoHash, now, &peer, sizeof(peer) );
-	// else
-	// 	redisAsyncCommand( store->context, NULL, NULL, "ZADD %s:%s:peers:compact %llu %b", store->namespace, announce->infoHash, now, &peer, sizeof(peer) );
 
 	redisAsyncCommand( store->context, MemoryStore_backendAnnounceResponse, client, "EXEC" );
 }
