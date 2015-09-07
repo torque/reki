@@ -37,13 +37,28 @@ static void redisDisconnectCb( const redisAsyncContext *redis, int status ) {
 
 MemoryStore *MemoryStore_new( const char *namespace ) {
 	MemoryStore *store = malloc( sizeof(*store) );
+	if ( !store ) goto badStore;
+
 	store->namespace = strdup( namespace );
+	if ( !store->namespace ) goto badNamespace;
+
 	store->timer = malloc( sizeof(*store->timer) );
+	if ( !store->timer ) goto badTimer;
+
 	store->timer->data = store;
 	return store;
+
+badTimer:
+	free( store->namespace );
+badNamespace:
+	free( store );
+badStore:
+	return NULL;
 }
 
 void MemoryStore_free( MemoryStore *store ) {
+	if ( !store ) return;
+
 	free( store->namespace );
 	free( store->timer );
 	free( store );
@@ -121,13 +136,13 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 	ClientConnection *client = voidClient;
 	ClientAnnounceData *announce = client->request.announce;
 	if ( reply->type != REDIS_REPLY_ARRAY || reply->elements != 4 ) {
-		Client_replyError( client, "A database error occurred.", 26 );
+		Client_replyErrorLen( client, "A database error occurred." );
 		return;
 	}
 
 	for ( int i = 0; i < reply->elements; i++ ) {
 		if ( reply->element[i]->type == REDIS_REPLY_ERROR ) {
-			Client_replyError( client, "A database error occurred.", 26 );
+			Client_replyErrorLen( client, "A database error occurred." );
 			return;
 		}
 	}
@@ -141,7 +156,11 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 
 	dbg_info( "s: %zu, p: %zu", seeds->elements, peers->elements );
 	StringBuffer *peerBuf  = StringBuffer_new( );
+	if ( !peerBuf ) goto badPeerBuf;
+
 	StringBuffer *peerBuf6 = StringBuffer_new( );
+	if ( !peerBuf6 ) goto badPeerBuf6;
+
 	int i = 0;
 	while ( i < peers->elements && i < announce->numwant ) {
 		char *compact = peers->element[i]->str;
@@ -173,6 +192,8 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 	// According to BEP23, only supporting compact responses is allowed:
 	// http://bittorrent.org/beps/bep_0023.html
 	StringBuffer *bencode = StringBuffer_new( );
+	if ( !bencode ) goto badBencode;
+
 	StringBuffer_sprintf( bencode, "d8:completei%llde10:incompletei%llde8:intervali%de5:peers%lu:", seedCount, peerCount, AnnounceInterval, peerBuf->size );
 	StringBuffer_join( bencode, peerBuf );
 	StringBuffer_sprintf( bencode, "6:peers6%lu:", peerBuf6->size );
@@ -191,6 +212,15 @@ static void MemoryStore_backendAnnounceResponse( redisAsyncContext *context, voi
 		redisAsyncCommand( context, NULL, NULL, "ZADD %s:%s:peers %llu %b", client->server->memStore->namespace, announce->infoHash, announce->score, announce->compact, (size_t)CompactAddress_Size );
 
 	Client_reply( client );
+	return;
+
+
+badBencode:
+	StringBuffer_free( peerBuf6 );
+badPeerBuf6:
+	StringBuffer_free( peerBuf );
+badPeerBuf:
+	Client_replyErrorLen( client, "An unknown error occurred." );
 }
 
 void MemoryStore_processAnnounce( MemoryStore *store, ClientConnection *client ) {
@@ -226,6 +256,8 @@ static void MemoryStore_backendScrapeResponse( redisAsyncContext *context, void 
 
 	ScrapeData *scrape = client->request.scrape;
 	StringBuffer *bencode  = StringBuffer_new( );
+	Client_CheckAllocReplyError( client, bencode );
+
 	StringBuffer_sprintf( bencode, "d5:filesd" );
 	for ( int i = 0; i < reply->elements; i += 2, scrape = scrape->next ) {
 		if ( reply->element[i]->type == REDIS_REPLY_ERROR || reply->element[i+1]->type == REDIS_REPLY_ERROR ) {
@@ -236,7 +268,7 @@ static void MemoryStore_backendScrapeResponse( redisAsyncContext *context, void 
 		long long incomplete = reply->element[i+1]->integer;
 		StringBuffer_append( bencode, "20:", 4 );
 		StringBuffer_append( bencode, scrape->compactHash, 20 );
-		StringBuffer_sprintf( bencode, "d8:completei%llde10:downloadedi0e10:incompletei%lldee", complete, incomplete );
+		StringBuffer_safeSprintf( bencode, "d8:completei%llde10:downloadedi0e10:incompletei%lldee", complete, incomplete );
 	}
 
 	StringBuffer_append( bencode, "ee", 2 );

@@ -36,6 +36,8 @@ static int dualDecodeInfoHash( const char *input, size_t length, char *compactHa
 
 ScrapeData *ScrapeData_new( void ) {
 	ScrapeData *scrape = malloc( sizeof(*scrape) );
+	if ( !scrape ) return NULL;
+
 	scrape->next = NULL;
 	return scrape;
 }
@@ -68,6 +70,7 @@ static int ScrapeData_parse( void *data, const char *key, size_t keyLength, cons
 		ScrapeCallbackData *cbd = data;
 		if ( !cbd->top ) {
 			cbd->top = ScrapeData_new( );
+			if ( !cbd->top ) return ScrapeError_unknown;
 			cbd->last->next = cbd->top;
 		}
 

@@ -20,11 +20,14 @@ const static char *AnnounceErrorStrings[] = {
 	"The request contained a malformed ipv6.",
 	"The request contained a malformed port.",
 	"The requested torrent does not exist."
+	"An unknown error has occurred."
 };
 
 static int handleIPv4( ClientAnnounceData *announce, const char *value, size_t valueLength ) {
-	char *ipv4;
-	int decodedLength = decodeURLString( value, valueLength, &ipv4 );
+	char *ipv4 = malloc( (valueLength + 1) * sizeof(*ipv4) );
+	if ( !ipv4 ) return 1;
+
+	int decodedLength = decodeURLString( value, valueLength, ipv4, valueLength );
 	// 0.0.0.0 the shortest ipv4 address?
 	if ( decodedLength < 7 ) return 1;
 
@@ -49,8 +52,10 @@ static int handleIPv4( ClientAnnounceData *announce, const char *value, size_t v
 
 static int handleIPv6( ClientAnnounceData *announce, const char *value, size_t valueLength ) {
 	// ipv6 can be of form: [::1]:9001 or ::1
-	char *ipv6;
-	int decodedLength = decodeURLString( value, valueLength, &ipv6 );
+	char *ipv6 = malloc( (valueLength + 1) * sizeof(*ipv6) );
+	if ( !ipv6 ) return 1;
+
+	int decodedLength = decodeURLString( value, valueLength, ipv6, valueLength );
 	if ( decodedLength < 2 ) return 1;
 
 	// have to use a scratch pointer because incrementing ipv6 means
@@ -83,20 +88,36 @@ static int handleIPv6( ClientAnnounceData *announce, const char *value, size_t v
 	return status;
 }
 
+#define InfoHashSize 40
+#define PeerIDSize 20
 ClientAnnounceData *ClientAnnounceData_new( void ) {
 	ClientAnnounceData *announce = malloc( sizeof(*announce) );
+	if ( !announce ) goto badAnnounce;
+
+	announce->infoHash = malloc( (InfoHashSize + 1) * sizeof(*announce->infoHash) );
+	if ( !announce->infoHash ) goto badHash;
+
+	announce->id = malloc( (PeerIDSize + 1) * sizeof(*announce->id) );
+	if ( !announce->id ) goto badID;
+
 	announce->numwant = 20;
 	announce->event   = AnnounceEvent_none;
 	CompactAddress_init( announce->compact );
 	announce->seenFields = 0;
-	announce->infoHash = NULL;
-	announce->id = NULL;
 	return announce;
+
+badID:
+	free( announce->infoHash );
+badHash:
+	free( announce );
+badAnnounce:
+	return NULL;
 }
 
 void ClientAnnounceData_free( ClientAnnounceData *announce ) {
 	if ( !announce ) return;
 	dbg_info( "ClientAnnounceData_free" );
+
 	free( announce->infoHash );
 	free( announce->id );
 	free( announce );
@@ -124,14 +145,12 @@ static int ClientAnnounceData_parse( void *data, const char *key, size_t keyLeng
 
 	// Compare keys to get values. This is not particularly elegant.
 	if ( CheckField( peer_id ) ) {
-		dbg_info( "peer_id: %.*s", (int)valueLength, value );
-		CheckError( decodeURLString( value, valueLength, &announce->id ) < 1, AnnounceError_malformedID );
+		CheckError( decodeURLString( value, valueLength, announce->id, PeerIDSize ) < 1, AnnounceError_malformedID );
 		announce->seenFields |= SeenFieldOffset_peer_id;
 
 	} else if ( CheckField( info_hash ) ) {
-		announce->infoHash = malloc( 41 * sizeof(*announce->infoHash) );
-		CheckError( decodeInfoHash( value, valueLength, announce->infoHash ) != 40, AnnounceError_malformedInfoHash );
-		dbg_info( "info_hash: %.*s", 40, announce->infoHash );
+		CheckError( decodeInfoHash( value, valueLength, announce->infoHash, InfoHashSize ) != InfoHashSize, AnnounceError_malformedInfoHash );
+		dbg_info( "info_hash: %s", announce->infoHash );
 		announce->seenFields |= SeenFieldOffset_info_hash;
 
 	// The IP value in the request can allegedly be a DNS name,
@@ -139,9 +158,11 @@ static int ClientAnnounceData_parse( void *data, const char *key, size_t keyLeng
 	// it's not currently supported.
 	// [1]: http://bittorrent.org/beps/bep_0003.html#trackers
 	} else if ( CheckField( ip ) ) {
-		char *ip;
-		CheckError( decodeURLString( value, valueLength, &ip ) < 1, AnnounceError_malformedIP );
+		char *ip = malloc( (valueLength + 1) * sizeof(*ip) );
+		if ( !ip ) return AnnounceError_unknown;
+		CheckError( decodeURLString( value, valueLength, ip, valueLength ) < 1, AnnounceError_malformedIP );
 		CheckError( CompactAddress_fromString( announce->compact, ip, NULL), AnnounceError_malformedIP );
+		free( ip );
 		announce->seenFields |= SeenFieldOffset_ip;
 
 	// Optional fields according to BEP7[1], I don't know if clients
@@ -156,7 +177,6 @@ static int ClientAnnounceData_parse( void *data, const char *key, size_t keyLeng
 		announce->seenFields |= SeenFieldOffset_ipv6;
 
 	} else if ( CheckField( port ) ) {
-		dbg_info( "port: %.*s", (int)valueLength, value );
 		unsigned long port = strtoul( value, NULL, 10 );
 		dbg_info( "portlong: %lu", port );
 		CheckError( (port < 1) || (port > 65535), AnnounceError_malformedPort );

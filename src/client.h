@@ -41,5 +41,6 @@ void Client_free( ClientConnection *client );
 void Client_handleConnection( ClientConnection *client );
 void Client_reply( ClientConnection *client );
 #define Client_replyErrorLen( client, message ) Client_replyError( client, message, strlen(message) )
+#define Client_CheckAllocReplyError( client, ptr ) if ( !ptr ) { Client_replyErrorLen( client, "An unknown error occurred." ); return; }
 void Client_replyError( ClientConnection *client, const char *message, size_t messageLength );
 void Client_terminate( ClientConnection *client );

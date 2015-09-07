@@ -21,6 +21,7 @@ enum _AnnounceError {
 	AnnounceError_malformedIPv6,
 	AnnounceError_malformedPort,
 	AnnounceError_noTorrent,
+	AnnounceError_unknown,
 };
 
 struct _ClientAnnounceData {

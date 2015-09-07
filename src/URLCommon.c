@@ -6,10 +6,9 @@
 #include "URLCommon.h"
 #include "dbg.h"
 
-int decodeURLString( const char *input, size_t length, char **output ) {
+int decodeURLString( const char *input, size_t length, char *output, size_t outputLength ) {
 	// output is guaranteed to be the same size as the input or smaller.
 	int o = 0;
-	*output = malloc( (length + 1)*sizeof(**output) );
 	for ( int i = 0; (i < length) && (o < length); i++, o++ ) {
 		if ( input[i] == '%' ) {
 			if ( i + 2 > length )
@@ -17,23 +16,23 @@ int decodeURLString( const char *input, size_t length, char **output ) {
 			char encodedChar[3] = { input[i + 1], input[i + 2], '\0' };
 			long decodedChar = strtol( encodedChar, NULL, 16 );
 			if ( decodedChar < UCHAR_MAX )
-				(*output)[o] = (char)decodedChar;
+				output[o] = (char)decodedChar;
 			else
 				return -2;
 			i += 2;
 		} else
-			(*output)[o] = input[i];
+			output[o] = input[i];
 	}
-	(*output)[o] = '\0';
+	output[o] = '\0';
 	return o;
 }
 
-int decodeInfoHash( const char *input, size_t length, char *output ) {
+int decodeInfoHash( const char *input, size_t length, char *output, size_t outputLength ) {
 	// kind of janky to hardcode the length. note: since snprintf null
 	// terminates, output has to be an extra character in width to avoid
 	// an OOB write.
 	int o = 0;
-	for ( int i = 0; (i < length) && (o < 40); i++, o++ ) {
+	for ( int i = 0; (i < length) && (o < outputLength); i++, o++ ) {
 		if ( input[i] == '%' ) {
 			if ( i + 2 > length )
 				return -1;

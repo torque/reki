@@ -13,6 +13,7 @@ enum _ScrapeError {
 	ScrapeError_okay = 0,
 	ScrapeError_invalidRequest,
 	ScrapeError_malformedInfoHash,
+	ScrapeError_unknown,
 };
 
 ScrapeData *ScrapeData_new( void );

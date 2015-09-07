@@ -6,16 +6,25 @@
 #include "StringBuffer.h"
 #include "dbg.h"
 
-#ifndef DEFAULT_BUFFER_SIZE
-#define DEFAULT_BUFFER_SIZE 1024
+#ifndef DefaultStringBufferSize
+#define DefaultStringBufferSize 1024
 #endif
 
 StringBuffer* StringBuffer_new( void ) {
 	StringBuffer *buffer = malloc( sizeof(*buffer) );
-	buffer->alloc_size = DEFAULT_BUFFER_SIZE;
-	buffer->str = malloc( buffer->alloc_size * sizeof(*buffer->str) );
+	if ( !buffer ) goto badBuffer;
+
+	buffer->str = malloc( DefaultStringBufferSize * sizeof(*buffer->str) );
+	if ( !buffer->str ) goto badStr;
+
+	buffer->alloc_size = DefaultStringBufferSize;
 	buffer->size = 0;
 	return buffer;
+
+badStr:
+	free( buffer );
+badBuffer:
+	return NULL;
 }
 
 StringBuffer *StringBuffer_initWithString( const char *src, size_t size ) {
@@ -33,7 +42,11 @@ void StringBuffer_free( StringBuffer *buf ) {
 
 static void StringBuffer_grow( StringBuffer *buf, size_t size ) {
 	while ( buf->alloc_size < size ) {
+		dbg_info( "buffer grow" );
 		buf->alloc_size *= 1.5f;
+		// realloc has really annoying semantics, and recovering from OOM
+		// here is really hard, so, I'm just not going to check it, and ruin
+		// everything. This should probably never be called, anyway.
 		buf->str = realloc( buf->str, sizeof(*buf->str) * buf->alloc_size );
 	}
 }

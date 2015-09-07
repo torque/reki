@@ -7,15 +7,29 @@
 
 ClientConnection *Client_new( void ) {
 	ClientConnection *client = malloc( sizeof(*client) );
+	if ( !client ) goto badClient;
+
 	client->readBuffer = StringBuffer_new( );
+	if ( !client->readBuffer ) goto badReadBuffer;
+
 	client->writeBuffer = StringBuffer_new( );
+	if ( !client->writeBuffer ) goto badWriteBuffer;
+
+	client->request.announce = NULL;
+
 	return client;
+
+badWriteBuffer:
+	StringBuffer_free( client->readBuffer );
+badReadBuffer:
+	free( client );
+badClient:
+	return NULL;
 }
 
 void Client_free( ClientConnection *client ) {
+	if ( !client ) return;
 	dbg_info( "Client_free" );
-	if ( !client )
-		return;
 
 	switch ( client->requestType ) {
 		case ClientRequest_announce: {
@@ -62,6 +76,11 @@ static void Client_replyDone( uv_write_t* reply, int status ) {
 
 void Client_reply( ClientConnection *client ) {
 	uv_write_t *reply = malloc( sizeof(*reply) );
+	if ( !reply ) {
+		Client_terminate( client );
+		return;
+	}
+
 	reply->data = client;
 
 	uv_buf_t uvMessage = StringBuffer_toUvBuf( client->writeBuffer );
@@ -94,6 +113,8 @@ static void Client_route( ClientConnection *client ) {
 	if ( EqualLiteralLength( path, pathSize, "/announce" ) ) {
 		StringBuffer_append( client->writeBuffer, OkayRoute, strlen( OkayRoute ) );
 		ClientAnnounceData *announce = ClientAnnounceData_new( );
+		Client_CheckAllocReplyError( client, announce );
+
 		announce->score = uv_now( client->handle.stream->loop );
 		client->requestType = ClientRequest_announce;
 		client->request.announce = announce;
@@ -135,12 +156,15 @@ static void Client_route( ClientConnection *client ) {
 	} else if ( EqualLiteralLength( path, pathSize, "/scrape" ) ) {
 		StringBuffer_append( client->writeBuffer, OkayRoute, strlen( OkayRoute ) );
 		ScrapeData *scrape = ScrapeData_new( );
+		Client_CheckAllocReplyError( client, scrape );
+
 		client->requestType = ClientRequest_scrape;
 		client->request.scrape = scrape;
 		if ( ScrapeData_fromQuery( scrape, query, querySize ) ) {
 			Client_replyErrorLen( client, "Invalid scrape request." );
 			return;
 		}
+
 		MemoryStore_processScrape( client->server->memStore, client );
 
 	} else {
@@ -176,6 +200,10 @@ static void Client_readRequest( uv_stream_t *clientConnection, ssize_t nread, co
 
 void Client_handleConnection( ClientConnection *client ) {
 	client->parserInfo = HttpParser_new( );
+	if ( !client->parserInfo ) {
+		Client_replyErrorLen( client, "An unknown error occurred." );
+		return;
+	}
 
 	uv_read_start( client->handle.stream, Client_allocReadBuffer, Client_readRequest );
 }

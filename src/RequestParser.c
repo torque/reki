@@ -89,9 +89,13 @@ HttpParserInfo *HttpParser_new( void ) {
 	};
 
 	HttpParserInfo *parserInfo = malloc( sizeof(*parserInfo) );
+	if ( !parserInfo ) goto badParserInfo;
+
 	parserInfo->parsedURL = malloc( sizeof(*parserInfo->parsedURL) );
+	if ( !parserInfo->parsedURL ) goto badParsedURL;
+
 	parserInfo->parser = malloc( sizeof(*parserInfo->parser) );
-	// check all these allocs maybe???
+	if ( !parserInfo->parser ) goto badParser;
 
 	http_parser_init( parserInfo->parser, HTTP_REQUEST );
 
@@ -109,6 +113,13 @@ HttpParserInfo *HttpParser_new( void ) {
 	parserInfo->parser->data = parserInfo;
 
 	return parserInfo;
+
+badParser:
+	free( parserInfo->parsedURL );
+badParsedURL:
+	free( parserInfo );
+badParserInfo:
+	return NULL;
 }
 
 void HttpParser_free( HttpParserInfo *parserInfo ) {
@@ -138,6 +149,8 @@ char *HttpParser_realIP( HttpParserInfo *parserInfo ) {
 	if ( !parserInfo->lastValue ) return NULL;
 
 	char *address = malloc( (parserInfo->lastValueLength + 1) * sizeof(*address) );
+	if ( !address ) return NULL;
+
 	memcpy( address, parserInfo->lastValue, parserInfo->lastValueLength );
 	address[parserInfo->lastValueLength] = '\0';
 	return address;
