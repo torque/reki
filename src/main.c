@@ -1,7 +1,4 @@
 #include <uv.h>
-#include <hiredis/hiredis.h>
-#include <hiredis/async.h>
-#include <hiredis/adapters/libuv.h>
 #include <signal.h>
 #include <stdio.h>
 
